@@ -47,7 +47,7 @@ class MiniHackAdapter(EnvAdapter):
         self._last = None
         return env
 
-    def keymap(self) -> SingleKeySpec:
+    def _keyspec(self) -> SingleKeySpec:
         combos = {frozenset([k]): v for k, v in _KEYS.items()}
         return SingleKeySpec(combos=combos, noop=0)
 

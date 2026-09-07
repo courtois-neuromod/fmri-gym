@@ -121,7 +121,7 @@ class AIGameStoreAdapter(EnvAdapter):
                 pass
         return _Session(pw, browser, page, server, set())
 
-    def keymap(self) -> HeldKeysSpec:
+    def _keyspec(self) -> HeldKeysSpec:
         # step() presses/releases the keys in the page itself, so the action is
         # the FULL set of held keys; combos just whitelist the ones we know.
         combos = {frozenset([k]): k for k in _KEY_TO_PLAYWRIGHT}

@@ -24,6 +24,22 @@ class KeySpec(ABC):
     combos: dict[frozenset[str], Any]
     noop: Any
 
+    @abstractmethod
+    def resolve(self, held: frozenset[str]) -> Any:
+        """Map currently-held keys to an action.
+
+        :param held: frozenset of currently pressed key NAMES.
+        :return: the action to send to the env this frame.
+        """
+
+    def _combos_for_overrides(self) -> dict[frozenset[str], Any]:
+        """Base combos to merge curriculum overrides into.
+
+        Default copies current combos so a partial remap keeps adapter defaults
+        for unmentioned keys (e.g. Pong remaps UP/DOWN, keeps SPACE=FIRE).
+        """
+        return dict(self.combos)
+
     def maximal(self, held: frozenset[str]) -> list[frozenset[str]]:
         """Return the most specific combos fully held in ``held``.
 
@@ -38,13 +54,29 @@ class KeySpec(ABC):
         return [keys for keys in matched
                 if not any(keys < other for other in matched)]
 
-    @abstractmethod
-    def resolve(self, held: frozenset[str]) -> Any:
-        """Map currently-held keys to an action.
+    def apply_overrides(self, overrides: dict) -> None:
+        """Merge curriculum-provided key combo overrides into this keymap.
 
-        :param held: frozenset of currently pressed key NAMES.
-        :return: the action to send to the env this frame.
+        :param overrides: ``{"LEFT": action, "LEFT+SPACE": action}`` map from
+            the curriculum (caller skips the call when empty / absent).
         """
+        combos = self._combos_for_overrides()
+        for combo_str, action in overrides.items():
+            keys = frozenset(k.strip().upper() for k in combo_str.split("+"))
+            combos[keys] = action
+        self.combos = combos
+
+    def key_to_action_map(self) -> dict:
+        """Map single pressed KEY names to actions (for turn-based play).
+
+        Resolving each key on its own (rather than reading ``combos`` directly)
+        keeps the action in whatever shape the keymap flavour produces, e.g. a
+        button vector for a :class:`MultiKeySpec`.
+
+        :return: ``{key_name: action}`` for single-key combos only.
+        """
+        return {next(iter(ks)): self.resolve(ks) for ks in self.combos
+                if len(ks) == 1}
 
 
 @dataclass
@@ -82,16 +114,6 @@ class MultiKeySpec(KeySpec):
 
     button_map: list[list[int]] | None = None
 
-    def expand(self, action: Any) -> list[int]:
-        """Return ``action`` as a per-button 0/1 vector.
-
-        :param action: a :attr:`button_map` index, or a 0/1 vector already.
-        :return: the button vector for ``action``.
-        """
-        if self.button_map is None:
-            return [int(v) for v in action]
-        return list(self.button_map[int(action)])
-
     def resolve(self, held: frozenset[str]) -> list[int]:
         """Return the OR of the button vectors of all matching combos.
 
@@ -104,6 +126,16 @@ class MultiKeySpec(KeySpec):
                 if pressed:
                     vec[i] = 1
         return vec
+
+    def expand(self, action: Any) -> list[int]:
+        """Return ``action`` as a per-button 0/1 vector.
+
+        :param action: a :attr:`button_map` index, or a 0/1 vector already.
+        :return: the button vector for ``action``.
+        """
+        if self.button_map is None:
+            return [int(v) for v in action]
+        return list(self.button_map[int(action)])
 
 
 @dataclass
@@ -125,3 +157,11 @@ class HeldKeysSpec(KeySpec):
         """
         known = {key for keys in self.combos for key in keys}
         return "+".join(sorted(held & known))
+
+    def _combos_for_overrides(self) -> dict[frozenset[str], Any]:
+        """Curriculum keys replace the adapter whitelist entirely.
+
+        A game phase lists exactly the keys it forwards; empty start so
+        unmentioned adapter defaults are dropped, not merged.
+        """
+        return {}

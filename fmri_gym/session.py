@@ -17,14 +17,12 @@ from typing import TYPE_CHECKING, Union
 import pygame
 
 from .adapters import get_adapter
-from .adapters.keyspec import HeldKeysSpec
 from .display import Display
 from .keys import held_key_names, key_name
 from .logging import Logger
 
 if TYPE_CHECKING:
     from .adapters.base import EnvAdapter
-    from .adapters.keyspec import KeySpec
 
 TRIGGER_KEY = "="
 EXPERIMENTER_KEY = " "
@@ -134,43 +132,6 @@ def _wait_for_duration(duration: float) -> None:
         if _check_quit():
             raise KeyboardInterrupt
         time.sleep(0.005)
-
-
-def _apply_key_overrides(keyspec: KeySpec, overrides: dict | None) -> KeySpec:
-    """Merge curriculum-provided key combo overrides into a :class:`KeySpec`.
-
-    :param keyspec: base keymap from the adapter.
-    :param overrides: optional ``{"LEFT": action, "LEFT+SPACE": action}`` map
-        from the curriculum; ``None`` / empty leaves ``keyspec`` unchanged.
-        For :class:`HeldKeysSpec` the overrides *replace* the adapter whitelist
-        (so a game phase lists exactly the keys it forwards); other flavors
-        merge so partial remaps keep adapter defaults for unmentioned keys.
-    :return: the (possibly mutated) ``keyspec``.
-    """
-    if not overrides:
-        return keyspec
-    # HeldKeys: curriculum keys are the full whitelist. Discrete/MultiBinary:
-    # merge so e.g. Pong can remap UP/DOWN while keeping SPACE=FIRE.
-    combos: dict = {} if isinstance(keyspec, HeldKeysSpec) else dict(keyspec.combos)
-    for combo_str, action in overrides.items():
-        keys = frozenset(k.strip().upper() for k in combo_str.split("+"))
-        combos[keys] = action
-    keyspec.combos = combos
-    return keyspec
-
-
-def _get_key_to_action_map(keyspec: KeySpec) -> dict:
-    """Map single pressed KEY names to actions (for turn-based play).
-
-    Resolving each key on its own (rather than reading ``combos`` directly)
-    keeps the action in whatever shape the keymap flavour produces, e.g. a
-    button vector for a :class:`~.adapters.keyspec.MultiKeySpec`.
-
-    :param keyspec: keymap whose length-1 combos become the press map.
-    :return: ``{key_name: action}`` for single-key combos only.
-    """
-    return {next(iter(ks)): keyspec.resolve(ks) for ks in keyspec.combos
-            if len(ks) == 1}
 
 
 class Session:
@@ -300,8 +261,6 @@ class Session:
         seed: int,
         episode_id: int,
         turn_based: bool,
-        key_to_action: dict,
-        keyspec: KeySpec,
         dt: float,
         state_stride: int,
         block_end: float,
@@ -313,8 +272,6 @@ class Session:
         :param seed: RNG seed for this episode's ``reset``.
         :param episode_id: index of this episode within the game block.
         :param turn_based: if True, advance only on mapped keydowns.
-        :param key_to_action: single-key name -> action map (turn-based only).
-        :param keyspec: keymap used to resolve held keys in real-time mode.
         :param dt: target seconds per frame (``1 / fps``).
         :param state_stride: save a full state blob every this many frames.
         :param block_end: ``perf_counter`` deadline for the game block.
@@ -324,6 +281,7 @@ class Session:
         terminated = truncated = False
         ep_frame = 0
         next_t = time.perf_counter()
+        key_to_action = adapter.keyspec.key_to_action_map() if turn_based else {}
 
         ## Reset environment and show initial state
         obs, info = adapter.reset(seed)
@@ -347,7 +305,7 @@ class Session:
             else:
                 if _check_quit():
                     return True
-                action = keyspec.resolve(held_key_names())
+                action = adapter.keyspec.resolve(held_key_names())
 
             obs, reward, terminated, truncated, info = adapter.step(action)
             # Anchor a full savestate at episode start and every stride.
@@ -407,17 +365,11 @@ class Session:
         # and a single held key fires many times. turn_based fixes both.
         turn_based = bool(phase.get("turn_based", False))
 
-        ## Key mapping
         # Some backends (nle, browser games) take several seconds to start;
         # show a Loading screen so the previous fixation "+" doesn't freeze.
         self.display.draw_text(
             f"Loading {phase.get('text') or phase.get('game', 'game')} …")
         adapter = get_adapter(backend, phase)
-        keyspec = adapter.keymap()
-        # Allow the curriculum to override the mapping explicitly.
-        keyspec = _apply_key_overrides(keyspec, phase.get("keys"))
-        # For turn-based play, map single pressed KEY -> action via key names.
-        key_to_action = _get_key_to_action_map(keyspec)
 
         ## Frame logging
         frames = defaultdict(list)
@@ -435,8 +387,7 @@ class Session:
             user_quit = self._episode(
                 adapter, frames,
                 seed=base_seed + episode_id, episode_id=episode_id,
-                turn_based=turn_based, key_to_action=key_to_action,
-                keyspec=keyspec, dt=dt, state_stride=state_stride,
+                turn_based=turn_based, dt=dt, state_stride=state_stride,
                 block_end=block_end)
             episode_id += 1
             if mode == "episode" and episode_id >= n_episodes:

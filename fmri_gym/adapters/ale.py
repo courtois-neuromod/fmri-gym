@@ -40,7 +40,7 @@ class ALEAdapter(EnvAdapter):
             spec["game"], render_mode="rgb_array",
             frameskip=1, repeat_action_probability=0.0)
 
-    def keymap(self) -> SingleKeySpec:
+    def _keyspec(self) -> SingleKeySpec:
         combos = {}
         for action, meaning in enumerate(self.env.unwrapped.get_action_meanings()):
             if meaning == "NOOP":

@@ -55,7 +55,7 @@ class SuperTuxKartAdapter(EnvAdapter):
         self._prev_dist = 0.0
         return race
 
-    def keymap(self) -> HeldKeysSpec:
+    def _keyspec(self) -> HeldKeysSpec:
         # Actions are assembled from the held-key set in step(); the combos here
         # just declare which keys are meaningful (resolve returns the held set).
         keys = ["LEFT", "RIGHT", "UP", "DOWN", "SPACE", "Z", "X"]

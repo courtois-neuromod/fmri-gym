@@ -122,7 +122,7 @@ class VizDoomAdapter(EnvAdapter):
         return gym.make(spec["game"], render_mode="rgb_array",
                         **spec.get("env_kwargs", {}))
 
-    def keymap(self) -> KeySpec:
+    def _keyspec(self) -> KeySpec:
         return _get_default_key_to_action_map(self.env)
 
     def render(self) -> np.ndarray:

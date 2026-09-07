@@ -78,7 +78,7 @@ class RushHourAdapter(EnvAdapter):
         self._last_info: dict = {}
         return gym.make(spec.get("game", "RushHour-Easy-v0"), render_mode="ansi")
 
-    def keymap(self) -> SingleKeySpec:
+    def _keyspec(self) -> SingleKeySpec:
         combos = {frozenset([k]): v for k, v in _DEFAULT_KEYMAP.items()}
         return SingleKeySpec(combos=combos, noop=_NOOP)
 

@@ -38,7 +38,7 @@ class OvercookedAdapter(EnvAdapter):
         self._partner = spec.get("partner", "stay")
         return OvercookedEnv.from_mdp(self._mdp, horizon=spec.get("horizon", 1000))
 
-    def keymap(self) -> SingleKeySpec:
+    def _keyspec(self) -> SingleKeySpec:
         A = self._Action
         combos = {frozenset(["UP"]): (0, -1), frozenset(["DOWN"]): (0, 1),
                   frozenset(["LEFT"]): (-1, 0), frozenset(["RIGHT"]): (1, 0),

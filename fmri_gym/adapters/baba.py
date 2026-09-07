@@ -31,7 +31,7 @@ class BabaAdapter(EnvAdapter):
         import baba
         return baba.make(spec.get("game", "env/make_win"))
 
-    def keymap(self) -> SingleKeySpec:
+    def _keyspec(self) -> SingleKeySpec:
         combos = {frozenset([k]): v for k, v in _DEFAULT_KEYMAP.items()}
         return SingleKeySpec(combos=combos, noop=0)
 

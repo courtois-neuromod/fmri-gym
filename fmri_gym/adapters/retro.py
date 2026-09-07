@@ -47,7 +47,7 @@ class RetroAdapter(EnvAdapter):
             game=spec["game"], scenario=spec.get("scenario"),
             render_mode="rgb_array")
 
-    def keymap(self) -> MultiKeySpec:
+    def _keyspec(self) -> MultiKeySpec:
         buttons = list(self.env.unwrapped.buttons)   # e.g. ["B","A","MODE",...,"C"]
         btn_index = {b: i for i, b in enumerate(buttons)}
 

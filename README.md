@@ -278,11 +278,11 @@ emulator, or an engine module. Each engine-specific concern lives behind
 
 ```python
 class EnvAdapter:
-    def make(self, spec)          -> gym.Env       # build the env for a block
-    def keymap(self, env)         -> KeySpec       # held keys -> action
-    def reset(self, env, seed, spec) -> (obs, info)
-    def capture(self, env, obs, info) -> FrameState  # per-frame state to log
-    def restore(self, env, blob)  -> None          # inverse of capture().blob
+    def _make(self, spec)         -> gym.Env       # build the env for a block
+    def _keyspec(self)            -> KeySpec       # held keys -> action
+    def reset(self, seed)         -> (obs, info)
+    def capture(self, obs, info)  -> FrameState    # per-frame state to log
+    def restore(self, blob)       -> None          # inverse of capture().blob
 ```
 
 `FrameState` carries a standard shape for **every** backend:

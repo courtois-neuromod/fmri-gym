@@ -43,7 +43,7 @@ class CrafterAdapter(EnvAdapter):
         self._last_obs = None
         return crafter.Env(**spec.get("env_kwargs", {}))
 
-    def keymap(self) -> SingleKeySpec:
+    def _keyspec(self) -> SingleKeySpec:
         combos = {frozenset([k]): v for k, v in _DEFAULT_KEYMAP.items()}
         return SingleKeySpec(combos=combos, noop=0)
 

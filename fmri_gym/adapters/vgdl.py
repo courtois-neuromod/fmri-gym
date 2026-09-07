@@ -91,7 +91,7 @@ class VGDLAdapter(EnvAdapter):
         r.background = r.screen.copy()
         env.renderer = r
 
-    def keymap(self) -> SingleKeySpec:
+    def _keyspec(self) -> SingleKeySpec:
         combos = {frozenset([k]): idx for k, idx in _KEYS.items()}
         return SingleKeySpec(combos=combos, noop=_VGDL_ACTIONS.index("NO_OP"))
 

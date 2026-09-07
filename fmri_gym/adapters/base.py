@@ -40,13 +40,16 @@ class EnvAdapter:
     :func:`fmri_gym.adapters.get_adapter`), so per-block state lives naturally
     on ``self`` with no risk of leaking between blocks.
 
-    Subclasses override :meth:`_make` (build the engine env) plus whichever of
-    the hooks below they need; state is returned in a STANDARD shape (a
+    Subclasses override :meth:`_make` (build the engine env) and
+    :meth:`_keyspec` (default keyboard map), plus whichever of the hooks
+    below they need; state is returned in a STANDARD shape (a
     :class:`FrameState`) so the logger and any downstream analysis code are
     identical across ALE / stable-retro / plain gym.
 
     :ivar spec: the game-phase config dict this env was built from.
     :ivar env: the underlying engine environment (kept private to the wrapper).
+    :ivar keyspec: keyboard->action mapping, with curriculum ``keys`` overrides
+        already applied.
     """
 
     #: short id used in filenames / manifest, e.g. "ale", "retro", "gym"
@@ -60,6 +63,9 @@ class EnvAdapter:
         """
         self.spec = spec
         self.env = self._make(spec)
+        self.keyspec = self._keyspec()
+        if spec.get("keys"):
+            self.keyspec.apply_overrides(spec["keys"])
 
     def _make(self, spec: dict) -> Any:
         """Create and return the underlying engine env for one game block.
@@ -73,8 +79,11 @@ class EnvAdapter:
         """
         raise NotImplementedError
 
-    def keymap(self) -> KeySpec:
-        """Return the keyboard->action mapping for this env.
+    def _keyspec(self) -> KeySpec:
+        """Return the default keyboard->action mapping for this env.
+
+        Called once from :meth:`__init__`; the result is stored as
+        :attr:`keyspec` after curriculum ``keys`` overrides are applied.
 
         :return: a concrete :class:`KeySpec` -- :class:`SingleKeySpec` for a
             ``Discrete`` space, :class:`MultiKeySpec` when held keys should

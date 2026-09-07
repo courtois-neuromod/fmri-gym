@@ -59,7 +59,7 @@ class NetHackAdapter(EnvAdapter):
         self._last = None
         return env
 
-    def keymap(self) -> SingleKeySpec:
+    def _keyspec(self) -> SingleKeySpec:
         combos = {frozenset([k]): v for k, v in self._key_to_action.items()}
         # noop: NLE has no true no-op; default to the first action.
         return SingleKeySpec(combos=combos, noop=0)

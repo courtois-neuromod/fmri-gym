@@ -39,7 +39,7 @@ class DefaultAdapter(EnvAdapter):
             return _make_via_shimmy(spec["game"], **kwargs)
         return gym.make(spec["game"], **kwargs)
 
-    def keymap(self) -> SingleKeySpec:
+    def _keyspec(self) -> SingleKeySpec:
         # Allow a curriculum to hand-specify a mapping: {"keys": {"LEFT": 0, ...}}
         # or {"keys": {"LEFT+SPACE": 2}} for combos.
         space = self.env.action_space
