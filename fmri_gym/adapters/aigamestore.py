@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .keyspec import HeldKeysSpec
+from .keyspec import PassthroughKeySpec
 from .base import EnvAdapter, FrameState
 
 if TYPE_CHECKING:
@@ -121,11 +121,11 @@ class AIGameStoreAdapter(EnvAdapter):
                 pass
         return _Session(pw, browser, page, server, set())
 
-    def _keyspec(self) -> HeldKeysSpec:
+    def _keyspec(self) -> PassthroughKeySpec:
         # step() presses/releases the keys in the page itself, so the action is
         # the FULL set of held keys; combos just whitelist the ones we know.
         combos = {frozenset([k]): k for k in _KEY_TO_PLAYWRIGHT}
-        return HeldKeysSpec(combos=combos, noop="")
+        return PassthroughKeySpec(combos=combos, noop="")
 
     def reset(self, seed: int | None) -> tuple[Any, dict]:
         page = self.env.page

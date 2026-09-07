@@ -1,7 +1,7 @@
 {
   "_game": "AI GameStore game10 (haunted mansion escape)",
   "_note": "pip install playwright (uses system Chrome by default).",
-  "_keys_note": "HeldKeysSpec: curriculum 'keys' whitelist physical keys forwarded into the page (values are identity; the action is the held set, '+'-joined). Escape the mansion across 6 levels; hide from the monster. Keep the message Controls text in sync with 'keys' by hand.",
+  "_keys_note": "PassthroughKeySpec: curriculum 'keys' whitelist physical keys forwarded into the page (values are identity; the action is the held set, '+'-joined). Escape the mansion across 6 levels; hide from the monster. Keep the message Controls text in sync with 'keys' by hand.",
   "_keys_reference": "https://github.com/tomov/fmri-gym/blob/main/vendor/aigamestore/game10/game.js",
   "curriculum": [
     {

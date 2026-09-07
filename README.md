@@ -344,7 +344,7 @@ which differ only in how they combine the matching combos:
 | --- | --- | --- |
 | `SingleKeySpec` | the most specific held combo | ale, gym, vgdl, crafter, nethack, … |
 | `MultiKeySpec` | OR of every held combo's buttons | retro, vizdoom (MultiBinary) |
-| `HeldKeysSpec` | the held key names, `"+"`-joined | aigamestore, supertuxkart |
+| `PassthroughKeySpec` | the held key names, `"+"`-joined | aigamestore, supertuxkart |
 
 ### Remapping keys (the `keys` field)
 

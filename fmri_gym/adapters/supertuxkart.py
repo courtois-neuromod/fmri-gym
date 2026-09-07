@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .keyspec import HeldKeysSpec
+from .keyspec import PassthroughKeySpec
 from .base import EnvAdapter, FrameState
 
 if TYPE_CHECKING:
@@ -55,12 +55,12 @@ class SuperTuxKartAdapter(EnvAdapter):
         self._prev_dist = 0.0
         return race
 
-    def _keyspec(self) -> HeldKeysSpec:
+    def _keyspec(self) -> PassthroughKeySpec:
         # Actions are assembled from the held-key set in step(); the combos here
         # just declare which keys are meaningful (resolve returns the held set).
         keys = ["LEFT", "RIGHT", "UP", "DOWN", "SPACE", "Z", "X"]
         combos = {frozenset([k]): k for k in keys}
-        return HeldKeysSpec(combos=combos, noop="")
+        return PassthroughKeySpec(combos=combos, noop="")
 
     def reset(self, seed: int | None) -> tuple[Any, dict]:
         # pystk2.Race has no reset(); restart the race for a fresh episode.

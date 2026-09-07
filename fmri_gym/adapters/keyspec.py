@@ -1,4 +1,4 @@
-"""KeySpec and its concrete flavors (Single / Multi / HeldKeys)."""
+"""KeySpec and its concrete flavors (Single / Multi / Passthrough)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ class KeySpec(ABC):
 
     Subclasses differ only in how they turn the matching combos into one
     action: :class:`SingleKeySpec` picks one, :class:`MultiKeySpec` ORs button
-    vectors, :class:`HeldKeysSpec` joins the held key names.
+    vectors, :class:`PassthroughKeySpec` joins the held key names.
 
     :ivar combos: maps a frozenset of pressed key NAMES (pygame key names
         without the "K_" prefix, upper-case: "LEFT", "SPACE", "Z", ...) to the
@@ -139,7 +139,7 @@ class MultiKeySpec(KeySpec):
 
 
 @dataclass
-class HeldKeysSpec(KeySpec):
+class PassthroughKeySpec(KeySpec):
     """Pass the held keys through: the env itself interprets the key set.
 
     For backends with no action space to index into, where ``step()`` turns the
