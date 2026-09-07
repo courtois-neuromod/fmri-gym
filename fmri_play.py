@@ -84,8 +84,8 @@ def main() -> None:
         "data", f"{args.subject}_{time.strftime('%Y%m%d-%H%M%S')}")
 
     # Build only the adapters this curriculum actually references.
-    backends = {ph.get("backend", "gym") for ph in curriculum
-                if ph.get("type") == "game"}
+    backends = {phase.get("backend", "gym") for phase in curriculum
+                if phase.get("type") == "game"}
     adapters = {}
     for b in backends:
         if b == "ale":
