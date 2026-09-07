@@ -1,4 +1,4 @@
-"""ALE (Atari 2600) adapter.
+"""ALE (Atari 2600) EnvAdapter.
 
 Exposes the Atari-specific bits behind the standard EnvAdapter interface:
 - keymap from the game's own action meanings;
@@ -28,22 +28,21 @@ _DIRECTIONS = {
 class ALEAdapter(EnvAdapter):
     name: str = "ale"
 
-    def __init__(self, save_pixels: bool = False) -> None:
-        self.save_pixels = save_pixels
-        # Block-wide palette for lossless indexed-pixel logging.
-        self._palette = np.zeros((256, 3), dtype=np.uint8)
-        self._palette_seen = np.zeros(256, dtype=bool)
+    def _make(self, spec: dict) -> gym.Env:
         import ale_py
         gym.register_envs(ale_py)
-
-    def make(self, spec: dict) -> gym.Env:
+        # Set "save_pixels": true in the phase for lossless indexed-pixel logging.
+        self.save_pixels = bool(spec.get("save_pixels", False))
+        # Block-wide palette for that logging.
+        self._palette = np.zeros((256, 3), dtype=np.uint8)
+        self._palette_seen = np.zeros(256, dtype=bool)
         return gym.make(
             spec["game"], render_mode="rgb_array",
             frameskip=1, repeat_action_probability=0.0)
 
-    def keymap(self, env: gym.Env) -> SingleKeySpec:
+    def keymap(self) -> SingleKeySpec:
         combos = {}
-        for action, meaning in enumerate(env.unwrapped.get_action_meanings()):
+        for action, meaning in enumerate(self.env.unwrapped.get_action_meanings()):
             if meaning == "NOOP":
                 continue
             fire = meaning.endswith("FIRE")
@@ -55,10 +54,8 @@ class ALEAdapter(EnvAdapter):
                 combos[frozenset(keys)] = action
         return SingleKeySpec(combos=combos, noop=0)
 
-    def capture(
-        self, env: gym.Env, obs: Any, info: dict, want_blob: bool = True
-    ) -> FrameState:
-        ale = env.unwrapped.ale
+    def capture(self, obs: Any, info: dict, want_blob: bool = True) -> FrameState:
+        ale = self.env.unwrapped.ale
         variables = {"ram": ale.getRAM().copy()}
         if self.save_pixels:
             idx = ale.getScreen()  # (210,160) uint8 palette indices
@@ -70,12 +67,12 @@ class ALEAdapter(EnvAdapter):
                     self._palette[i] = flat_c[flat_i == i][0]
                     self._palette_seen[i] = True
             variables["screen_index"] = idx.copy()
-        blob = (pickle.dumps(env.unwrapped.clone_state(include_rng=True))
+        blob = (pickle.dumps(self.env.unwrapped.clone_state(include_rng=True))
                 if want_blob else None)
         return FrameState(blob=blob, variables=variables)
 
-    def restore(self, env: gym.Env, blob: bytes) -> None:
-        env.unwrapped.restore_state(pickle.loads(blob))
+    def restore(self, blob: bytes) -> None:
+        self.env.unwrapped.restore_state(pickle.loads(blob))
 
     def block_extra(self) -> dict | None:
         """Block-level arrays merged into the npz (the palette, if save_pixels)."""

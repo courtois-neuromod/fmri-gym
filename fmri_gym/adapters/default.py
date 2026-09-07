@@ -25,7 +25,7 @@ from .base import EnvAdapter, FrameState
 class DefaultAdapter(EnvAdapter):
     name: str = "gym"
 
-    def make(self, spec: dict) -> gym.Env:
+    def _make(self, spec: dict) -> gym.Env:
         # Many third-party envs only register their ids as a side effect of
         # importing their package (crafter, minihack, tile_match_gym, ...).
         # A curriculum can name that module via "import_module".
@@ -39,10 +39,10 @@ class DefaultAdapter(EnvAdapter):
             return _make_via_shimmy(spec["game"], **kwargs)
         return gym.make(spec["game"], **kwargs)
 
-    def keymap(self, env: gym.Env) -> SingleKeySpec:
+    def keymap(self) -> SingleKeySpec:
         # Allow a curriculum to hand-specify a mapping: {"keys": {"LEFT": 0, ...}}
         # or {"keys": {"LEFT+SPACE": 2}} for combos.
-        space = env.action_space
+        space = self.env.action_space
         combos, noop = {}, None
 
         if isinstance(space, spaces.Discrete):
@@ -74,7 +74,7 @@ class DefaultAdapter(EnvAdapter):
         return SingleKeySpec(combos=combos, noop=noop)
 
     def capture(
-        self, env: gym.Env, obs: Any, info: dict, want_blob: bool = True
+        self, obs: Any, info: dict, want_blob: bool = True
     ) -> FrameState:
         # No universal savestate: blob=None -> reconstruction is via seed+replay.
         # The observation is the analysis state for most gym envs.

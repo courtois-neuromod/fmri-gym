@@ -12,10 +12,11 @@ from __future__ import annotations
 import sys
 import time
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Union
 
 import pygame
 
+from .adapters import get_adapter
 from .adapters.keyspec import HeldKeysSpec
 from .display import Display
 from .keys import held_key_names, key_name
@@ -179,7 +180,6 @@ class Session:
         self,
         subject: str,
         curriculum: list[dict],
-        adapters: dict[str, EnvAdapter],
         display: Display,
         outdir: str,
         dummy_trigger: bool = False,
@@ -188,14 +188,12 @@ class Session:
 
         :param subject: subject identifier used in log paths / manifest.
         :param curriculum: ordered list of phase dicts (``type``, timings, …).
-        :param adapters: ``{backend_name: EnvAdapter}`` for game phases.
         :param display: shared pygame display used by all phases.
         :param outdir: directory for the session manifest and game npz files.
         :param dummy_trigger: if ``True``, skip real experimenter/scanner waits.
         """
         self.subject = subject
         self.curriculum = curriculum
-        self.adapters = adapters              # {backend_name: EnvAdapter}
         self.display = display
         self.dummy_trigger = dummy_trigger
         self.clock = Clock()
@@ -297,8 +295,6 @@ class Session:
     def _episode(
         self,
         adapter: EnvAdapter,
-        env: Any,
-        phase: dict,
         frames: dict,
         *,
         seed: int,
@@ -312,9 +308,7 @@ class Session:
     ) -> bool:
         """Run one episode, appending frame data to ``frames``.
 
-        :param adapter: env adapter for reset/step/render/capture.
-        :param env: the live environment instance.
-        :param phase: game-phase config dict (passed through to ``adapter.reset``).
+        :param adapter: wrapped env for reset/step/render/capture.
         :param frames: mutable frame-log dict; lists are appended in place.
         :param seed: RNG seed for this episode's ``reset``.
         :param episode_id: index of this episode within the game block.
@@ -332,8 +326,8 @@ class Session:
         next_t = time.perf_counter()
 
         ## Reset environment and show initial state
-        obs, info = adapter.reset(env, seed, phase)
-        self.display.draw_frame(adapter.render(env))
+        obs, info = adapter.reset(seed)
+        self.display.draw_frame(adapter.render())
 
         ## Loop over frames within episode
         while not (terminated or truncated) and time.perf_counter() < block_end:
@@ -355,11 +349,11 @@ class Session:
                     return True
                 action = keyspec.resolve(held_key_names())
 
-            obs, reward, terminated, truncated, info = adapter.step(env, action)
+            obs, reward, terminated, truncated, info = adapter.step(action)
             # Anchor a full savestate at episode start and every stride.
             save_blob = (ep_frame % state_stride == 0)
             ep_frame += 1
-            fs = adapter.capture(env, obs, info, want_blob=save_blob)
+            fs = adapter.capture(obs, info, want_blob=save_blob)
 
             # Prefer env_action when an adapter translates UI meta-keys into a
             # different logged action (e.g. Rush Hour select+move -> Discrete).
@@ -376,7 +370,7 @@ class Session:
             for k, v in fs.variables.items():
                 frames["variables"][k].append(v)
 
-            self.display.draw_frame(adapter.render(env))
+            self.display.draw_frame(adapter.render())
         return False
 
     def _game(self, phase: dict, index: int) -> None:
@@ -393,7 +387,6 @@ class Session:
         """
         ## Config
         backend = phase.get("backend", "gym")
-        adapter = self.adapters[backend]
         mode = phase.get("mode", "duration")
         duration = phase.get("duration", 30.0)
         n_episodes = phase.get("n_episodes", 1)
@@ -419,8 +412,8 @@ class Session:
         # show a Loading screen so the previous fixation "+" doesn't freeze.
         self.display.draw_text(
             f"Loading {phase.get('text') or phase.get('game', 'game')} …")
-        env = adapter.make(phase)
-        keyspec = adapter.keymap(env)
+        adapter = get_adapter(backend, phase)
+        keyspec = adapter.keymap()
         # Allow the curriculum to override the mapping explicitly.
         keyspec = _apply_key_overrides(keyspec, phase.get("keys"))
         # For turn-based play, map single pressed KEY -> action via key names.
@@ -440,7 +433,7 @@ class Session:
         while not user_quit and time.perf_counter() < block_end:
             ## Run one episode
             user_quit = self._episode(
-                adapter, env, phase, frames,
+                adapter, frames,
                 seed=base_seed + episode_id, episode_id=episode_id,
                 turn_based=turn_based, key_to_action=key_to_action,
                 keyspec=keyspec, dt=dt, state_stride=state_stride,
@@ -450,7 +443,7 @@ class Session:
                 break
 
         extra = getattr(adapter, "block_extra", lambda: None)()
-        adapter.close(env)
+        adapter.close()
         # Some gym envs (classic-control) call pygame.display.quit() on close(),
         # which tears down our shared window; rebuild it if so.
         self.display.ensure()

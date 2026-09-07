@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-import gymnasium as gym
 import numpy as np
 
 from .keyspec import KeySpec
@@ -13,7 +12,7 @@ from .keyspec import KeySpec
 
 @dataclass
 class FrameState:
-    """Everything an adapter exposes about the env at one frame.
+    """Everything an adapter exposes about itself at one frame.
 
     :ivar blob: opaque bytes that :meth:`EnvAdapter.restore` can turn back into
         this exact state (e.g. pickled ALE ``clone_state``, retro
@@ -31,43 +30,52 @@ class FrameState:
 class EnvAdapter:
     """The seam that makes the fMRI loop engine-agnostic.
 
-    The experiment loop (session.py) NEVER touches ``env.unwrapped``, a specific
-    emulator, or any engine-specific API. Everything engine-specific lives behind
-    an EnvAdapter. To support a new backend you write one small adapter subclass;
-    the rest of the framework is unchanged.
+    An EnvAdapter WRAPS one game environment for one game block: it builds the
+    underlying engine env in ``__init__`` and keeps it (and any per-block state)
+    private, exposing only the small interface the experiment loop needs. The
+    loop (session.py) never sees the raw env, ``env.unwrapped``, or any
+    engine-specific API -- it just calls the methods below on the wrapper.
 
-    An adapter is responsible for four things:
+    A fresh EnvAdapter is constructed per game block (see
+    :func:`fmri_gym.adapters.get_adapter`), so per-block state lives naturally
+    on ``self`` with no risk of leaking between blocks.
 
-        make(spec)         -> create the gym.Env for one game block
-        keymap(env)        -> how held keyboard keys become an env action
-        capture(env)       -> the per-frame state we log (opaque blob + named vars)
-        restore(env, blob) -> put the env back into a captured state (if supported)
+    Subclasses override :meth:`_make` (build the engine env) plus whichever of
+    the hooks below they need; state is returned in a STANDARD shape (a
+    :class:`FrameState`) so the logger and any downstream analysis code are
+    identical across ALE / stable-retro / plain gym.
 
-    State is returned in a STANDARD shape (a :class:`FrameState`) so the logger
-    and any downstream analysis code are identical across ALE / stable-retro /
-    plain gym.
+    :ivar spec: the game-phase config dict this env was built from.
+    :ivar env: the underlying engine environment (kept private to the wrapper).
     """
 
     #: short id used in filenames / manifest, e.g. "ale", "retro", "gym"
     name: str = "base"
 
-    def make(self, spec: dict) -> gym.Env:
-        """Return a gym-compatible env for one game block.
+    def __init__(self, spec: dict) -> None:
+        """Build the underlying env for one game block.
 
-        ``spec`` is the game phase dict from the curriculum (already validated
-        for the keys this adapter cares about). Must render RGB frames via
-        ``env.render()`` with ``render_mode="rgb_array"``.
+        :param spec: game-phase config dict from the curriculum (already
+            validated for the keys this backend cares about).
+        """
+        self.spec = spec
+        self.env = self._make(spec)
+
+    def _make(self, spec: dict) -> Any:
+        """Create and return the underlying engine env for one game block.
+
+        Must produce an env that renders RGB frames (``render_mode="rgb_array"``
+        for Gymnasium envs). May also initialise per-block state on ``self``.
 
         :param spec: game-phase config dict from the curriculum.
-        :return: a Gymnasium-compatible environment.
+        :return: the underlying environment, stored as ``self.env``.
         :raises NotImplementedError: always in the base class.
         """
         raise NotImplementedError
 
-    def keymap(self, env: gym.Env) -> KeySpec:
+    def keymap(self) -> KeySpec:
         """Return the keyboard->action mapping for this env.
 
-        :param env: the live environment instance from :meth:`make`.
         :return: a concrete :class:`KeySpec` -- :class:`SingleKeySpec` for a
             ``Discrete`` space, :class:`MultiKeySpec` when held keys should
             combine, :class:`HeldKeysSpec` when ``step`` takes the key set.
@@ -75,43 +83,38 @@ class EnvAdapter:
         """
         raise NotImplementedError
 
-    def reset(self, env: gym.Env, seed: int | None, spec: dict) -> tuple[Any, dict]:
+    def reset(self, seed: int | None) -> tuple[Any, dict]:
         """Reset the env for a new episode.
 
-        Adapters may use ``spec`` for per-episode setup (e.g. retro load_state).
+        Subclasses may use ``self.spec`` for per-episode setup (e.g. retro
+        load_state).
 
-        :param env: the live environment instance.
         :param seed: RNG seed for this episode, or ``None``.
-        :param spec: game-phase config dict (may carry load-state hints).
         :return: ``(obs, info)`` from ``env.reset``.
         """
-        return env.reset(seed=seed)
+        return self.env.reset(seed=seed)
 
-    def step(self, env: gym.Env, action: Any) -> tuple[Any, float, bool, bool, dict]:
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict]:
         """Advance one frame.
 
-        Default is the Gymnasium contract; adapters with non-standard
+        Default is the Gymnasium contract; subclasses with non-standard
         signatures (e.g. VGDL's ``step(a, with_img=)``) override this.
 
-        :param env: the live environment instance.
         :param action: action to apply (type depends on the env).
         :return: ``(obs, reward, terminated, truncated, info)``.
         """
-        return env.step(action)
+        return self.env.step(action)
 
-    def capture(
-        self, env: gym.Env, obs: Any, info: dict, want_blob: bool = True
-    ) -> FrameState:
+    def capture(self, obs: Any, info: dict, want_blob: bool = True) -> FrameState:
         """Return the :class:`FrameState` to log for the current frame.
 
         Called once per step. ``obs``/``info`` are the latest :meth:`step`
-        outputs so adapters can fold observation-derived state in without
+        outputs so subclasses can fold observation-derived state in without
         re-querying. When ``want_blob`` is ``False`` the caller does not need
-        the (often expensive) savestate this frame, so adapters SHOULD skip
+        the (often expensive) savestate this frame, so subclasses SHOULD skip
         computing ``blob`` and leave it ``None`` -- the cheap analysis
         variables should still be filled.
 
-        :param env: the live environment instance.
         :param obs: observation from the latest step/reset.
         :param info: info dict from the latest step/reset.
         :param want_blob: if ``False``, skip expensive savestate capture.
@@ -119,34 +122,30 @@ class EnvAdapter:
         """
         return FrameState()
 
-    def restore(self, env: gym.Env, blob: bytes) -> None:
+    def restore(self, blob: bytes) -> None:
         """Inverse of :attr:`FrameState.blob`: restore a captured state.
 
-        :param env: the live environment instance.
         :param blob: opaque bytes previously returned by :meth:`capture`.
         :raises NotImplementedError: if the backend has no in-memory savestate.
         """
-        raise NotImplementedError(f"{self.name} adapter has no in-memory savestate")
+        raise NotImplementedError(f"{self.name} env has no in-memory savestate")
 
-    def render(self, env: gym.Env) -> np.ndarray:
+    def render(self) -> np.ndarray:
         """Return the current RGB frame ``(H, W, 3)`` uint8 for display.
 
         Default assumes the Gymnasium contract (``env.render()`` with the env
-        made using ``render_mode="rgb_array"``). Adapters for non-standard envs
-        override this (e.g. old-gym's ``env.render(mode="rgb_array")``).
+        made using ``render_mode="rgb_array"``). Subclasses for non-standard
+        envs override this (e.g. old-gym's ``env.render(mode="rgb_array")``).
 
-        :param env: the live environment instance.
         :return: RGB frame as a numpy array.
         """
-        return env.render()
+        return self.env.render()
 
-    def close(self, env: gym.Env) -> None:
-        """Close the env if it exposes ``close()``.
+    def close(self) -> None:
+        """Close the underlying env if it exposes ``close()``.
 
         Not every env exposes ``close()`` (e.g. overcooked's OvercookedEnv).
-
-        :param env: the live environment instance.
         """
-        closer = getattr(env, "close", None)
+        closer = getattr(self.env, "close", None)
         if callable(closer):
             closer()

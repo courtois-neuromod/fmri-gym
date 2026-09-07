@@ -20,7 +20,7 @@ import json
 import os
 import time
 
-from fmri_gym import Display, Session, get_adapter
+from fmri_gym import Display, Session
 
 
 def build_demo_curriculum() -> list[dict]:
@@ -83,21 +83,19 @@ def main() -> None:
     outdir = args.outdir or os.path.join(
         "data", f"{args.subject}_{time.strftime('%Y%m%d-%H%M%S')}")
 
-    # Build only the adapters this curriculum actually references.
-    backends = {phase.get("backend", "gym") for phase in curriculum
-                if phase.get("type") == "game"}
-    adapters = {}
-    for b in backends:
-        if b == "ale":
-            kwargs = {"save_pixels": args.save_pixels}
-        elif b == "vgdl":
-            kwargs = {"repo": args.vgdl_repo}
-        else:
-            kwargs = {}
-        adapters[b] = get_adapter(b, **kwargs)
+    # CLI-global backend options fold into the relevant game phases, so each
+    # per-block EnvAdapter reads everything it needs from its own spec.
+    for phase in curriculum:
+        if phase.get("type") != "game":
+            continue
+        backend = phase.get("backend", "gym")
+        if backend == "ale" and args.save_pixels:
+            phase.setdefault("save_pixels", True)
+        if backend == "vgdl" and args.vgdl_repo:
+            phase.setdefault("repo", args.vgdl_repo)
 
     display = Display(size=(w, h), fullscreen=args.fullscreen)
-    session = Session(args.subject, curriculum, adapters, display, outdir,
+    session = Session(args.subject, curriculum, display, outdir,
                       dummy_trigger=args.dummy_trigger)
     try:
         session.run()

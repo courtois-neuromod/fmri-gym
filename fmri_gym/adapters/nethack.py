@@ -41,7 +41,7 @@ _ARROW_TO_KEYCODE = {"UP": 107, "RIGHT": 108, "DOWN": 106, "LEFT": 104}
 class NetHackAdapter(EnvAdapter):
     name: str = "nethack"
 
-    def make(self, spec: dict) -> gym.Env:
+    def _make(self, spec: dict) -> gym.Env:
         import nle  # noqa: F401  (registers NetHack*-v0 env ids)
         env = gym.make(spec.get("game", "NetHackScore-v0"))
         # Map each arrow's target keycode to its Discrete action index (the
@@ -59,22 +59,20 @@ class NetHackAdapter(EnvAdapter):
         self._last = None
         return env
 
-    def keymap(self, env: gym.Env) -> SingleKeySpec:
+    def keymap(self) -> SingleKeySpec:
         combos = {frozenset([k]): v for k, v in self._key_to_action.items()}
         # noop: NLE has no true no-op; default to the first action.
         return SingleKeySpec(combos=combos, noop=0)
 
-    def reset(self, env: gym.Env, seed: int | None, spec: dict) -> tuple[Any, dict]:
-        obs, info = env.reset(seed=seed)
+    def reset(self, seed: int | None) -> tuple[Any, dict]:
+        obs, info = self.env.reset(seed=seed)
         self._last = obs
         return obs, info
 
-    def render(self, env: gym.Env) -> np.ndarray:
+    def render(self) -> np.ndarray:
         return _tty_to_rgb(self._last, self._cell)
 
-    def capture(
-        self, env: gym.Env, obs: Any, info: dict, want_blob: bool = True
-    ) -> FrameState:
+    def capture(self, obs: Any, info: dict, want_blob: bool = True) -> FrameState:
         self._last = obs
         variables = {}
         for k in ("blstats", "glyphs", "message"):

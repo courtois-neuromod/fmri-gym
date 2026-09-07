@@ -27,31 +27,30 @@ _DEFAULT_KEYMAP: dict[str, int] = {"UP": 1, "RIGHT": 2, "DOWN": 3, "LEFT": 4}
 class BabaAdapter(EnvAdapter):
     name: str = "baba"
 
-    def make(self, spec: dict) -> Any:
+    def _make(self, spec: dict) -> Any:
         import baba
-        self._env = baba.make(spec.get("game", "env/make_win"))
-        return self._env
+        return baba.make(spec.get("game", "env/make_win"))
 
-    def keymap(self, env: Any) -> SingleKeySpec:
+    def keymap(self) -> SingleKeySpec:
         combos = {frozenset([k]): v for k, v in _DEFAULT_KEYMAP.items()}
         return SingleKeySpec(combos=combos, noop=0)
 
-    def reset(self, env: Any, seed: int | None, spec: dict) -> tuple[Any, dict]:
+    def reset(self, seed: int | None) -> tuple[Any, dict]:
         try:
-            out = env.reset(seed=seed)
+            out = self.env.reset(seed=seed)
         except TypeError:
-            out = env.reset()
+            out = self.env.reset()
         obs = out[0] if isinstance(out, tuple) else out
         return obs, {}
 
-    def step(self, env: Any, action: Any) -> tuple[Any, float, bool, bool, dict]:
-        obs, reward, done, info = env.step(int(action))
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict]:
+        obs, reward, done, info = self.env.step(int(action))
         return obs, float(reward), bool(done), False, info
 
-    def render(self, env: Any) -> np.ndarray:
-        return np.asarray(env.render("rgb_array"))
+    def render(self) -> np.ndarray:
+        return np.asarray(self.env.render("rgb_array"))
 
     def capture(
-        self, env: Any, obs: Any, info: dict, want_blob: bool = True
+        self, obs: Any, info: dict, want_blob: bool = True
     ) -> FrameState:
         return FrameState(blob=None, variables={})

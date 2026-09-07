@@ -39,18 +39,16 @@ _KEY_TO_BUTTON = {
 class RetroAdapter(EnvAdapter):
     name: str = "retro"
 
-    def __init__(self, save_pixels: bool = False) -> None:
+    def _make(self, spec: dict) -> gym.Env:
         # save_pixels accepted for interface symmetry; retro frames are already
         # reconstructable from the per-frame state, so pixels aren't stored.
-        self.save_pixels = save_pixels
-
-    def make(self, spec: dict) -> gym.Env:
+        self.save_pixels = bool(spec.get("save_pixels", False))
         return retro.make(
             game=spec["game"], scenario=spec.get("scenario"),
             render_mode="rgb_array")
 
-    def keymap(self, env: gym.Env) -> MultiKeySpec:
-        buttons = list(env.unwrapped.buttons)   # e.g. ["B","A","MODE",...,"C"]
+    def keymap(self) -> MultiKeySpec:
+        buttons = list(self.env.unwrapped.buttons)   # e.g. ["B","A","MODE",...,"C"]
         btn_index = {b: i for i, b in enumerate(buttons)}
 
         def action_for(held_key: str) -> list[int]:
@@ -70,16 +68,16 @@ class RetroAdapter(EnvAdapter):
                 combos[frozenset([key])] = vec
         return MultiKeySpec(combos=combos, noop=[0] * len(buttons))
 
-    def reset(self, env: gym.Env, seed: int | None, spec: dict) -> tuple[Any, dict]:
-        state = spec.get("state")
+    def reset(self, seed: int | None) -> tuple[Any, dict]:
+        state = self.spec.get("state")
         if state:
-            env.unwrapped.load_state(state)
-        return env.reset()
+            self.env.unwrapped.load_state(state)
+        return self.env.reset()
 
     def capture(
-        self, env: gym.Env, obs: Any, info: dict, want_blob: bool = True
+        self, obs: Any, info: dict, want_blob: bool = True
     ) -> FrameState:
-        u = env.unwrapped
+        u = self.env.unwrapped
         u.data.update_ram()
         variables = {"ram": u.get_ram().copy()}
         # Surface the game's decoded integration variables (score/lives/...).
@@ -89,7 +87,7 @@ class RetroAdapter(EnvAdapter):
         blob = u.em.get_state() if want_blob else None
         return FrameState(blob=blob, variables=variables)
 
-    def restore(self, env: gym.Env, blob: bytes) -> None:
-        u = env.unwrapped
+    def restore(self, blob: bytes) -> None:
+        u = self.env.unwrapped
         u.em.set_state(blob)
         u.data.update_ram()

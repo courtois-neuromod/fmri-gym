@@ -112,7 +112,7 @@ def _get_default_key_to_action_map(env: gym.Env) -> KeySpec:
 class VizDoomAdapter(EnvAdapter):
     name: str = "vizdoom"
 
-    def make(self, spec: dict) -> gym.Env:
+    def _make(self, spec: dict) -> gym.Env:
         """Create a ViZDoom Gymnasium environment for one game block.
 
         :param spec: game-phase config dict from the curriculum.
@@ -122,15 +122,13 @@ class VizDoomAdapter(EnvAdapter):
         return gym.make(spec["game"], render_mode="rgb_array",
                         **spec.get("env_kwargs", {}))
 
-    def keymap(self, env: gym.Env) -> KeySpec:
-        return _get_default_key_to_action_map(env)
+    def keymap(self) -> KeySpec:
+        return _get_default_key_to_action_map(self.env)
 
-    def render(self, env: gym.Env) -> np.ndarray:
-        return np.asarray(env.render())
+    def render(self) -> np.ndarray:
+        return np.asarray(self.env.render())
 
-    def capture(
-        self, env: gym.Env, obs: Any, info: dict, want_blob: bool = True
-    ) -> FrameState:
+    def capture(self, obs: Any, info: dict, want_blob: bool = True) -> FrameState:
         variables = {}
         if isinstance(obs, dict) and "gamevariables" in obs:
             variables["gamevariables"] = np.asarray(obs["gamevariables"])

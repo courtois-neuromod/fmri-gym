@@ -32,7 +32,7 @@ _STARTED: dict[str, bool] = {"init": False}
 class SuperTuxKartAdapter(EnvAdapter):
     name: str = "supertuxkart"
 
-    def make(self, spec: dict) -> pystk2.Race:
+    def _make(self, spec: dict) -> pystk2.Race:
         import pystk2
         self._pystk2 = pystk2
         w = int(spec.get("width", 600))
@@ -51,29 +51,28 @@ class SuperTuxKartAdapter(EnvAdapter):
         race = pystk2.Race(cfg)
         race.start()
         race.step()  # first frame
-        self._race = race
         self._ws = pystk2.WorldState()
         self._prev_dist = 0.0
         return race
 
-    def keymap(self, env: pystk2.Race) -> HeldKeysSpec:
+    def keymap(self) -> HeldKeysSpec:
         # Actions are assembled from the held-key set in step(); the combos here
         # just declare which keys are meaningful (resolve returns the held set).
         keys = ["LEFT", "RIGHT", "UP", "DOWN", "SPACE", "Z", "X"]
         combos = {frozenset([k]): k for k in keys}
         return HeldKeysSpec(combos=combos, noop="")
 
-    def reset(self, env: pystk2.Race, seed: int | None, spec: dict) -> tuple[Any, dict]:
+    def reset(self, seed: int | None) -> tuple[Any, dict]:
         # pystk2.Race has no reset(); restart the race for a fresh episode.
         try:
-            env.restart()
+            self.env.restart()
         except Exception:
             pass
-        env.step()
+        self.env.step()
         self._prev_dist = 0.0
         return None, {}
 
-    def step(self, env: pystk2.Race, action: Any) -> tuple[Any, float, bool, bool, dict]:
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict]:
         pystk2 = self._pystk2
         held = set(action.split("+")) if isinstance(action, str) and action else \
             (set(action) if action else set())
@@ -84,25 +83,25 @@ class SuperTuxKartAdapter(EnvAdapter):
         a.fire = "SPACE" in held
         a.drift = "Z" in held
         a.nitro = "X" in held
-        env.step(a)
+        self.env.step(a)
         self._ws.update()
         kart = self._ws.karts[0] if self._ws.karts else None
         dist = float(getattr(kart, "overall_distance", 0.0)) if kart else 0.0
         reward = dist - self._prev_dist
         self._prev_dist = dist
-        finished = bool(getattr(kart, "finished_laps", 0) >= self._race.config.laps) if kart else False
+        finished = bool(getattr(kart, "finished_laps", 0) >= self.env.config.laps) if kart else False
         return None, reward, finished, False, {"distance": dist}
 
-    def render(self, env: pystk2.Race) -> np.ndarray:
-        return np.asarray(env.render_data[0].image)
+    def render(self) -> np.ndarray:
+        return np.asarray(self.env.render_data[0].image)
 
     def capture(
-        self, env: pystk2.Race, obs: Any, info: dict, want_blob: bool = True
+        self, obs: Any, info: dict, want_blob: bool = True
     ) -> FrameState:
         return FrameState(blob=None, variables={"distance": (info or {}).get("distance", 0.0)})
 
-    def close(self, env: pystk2.Race) -> None:
+    def close(self) -> None:
         try:
-            env.stop()
+            self.env.stop()
         except Exception:
             pass

@@ -62,7 +62,7 @@ _SIDEWAYS_PENALTY = 2 * 6
 class RushHourAdapter(EnvAdapter):
     name: str = "rushhour"
 
-    def make(self, spec: dict) -> Any:
+    def _make(self, spec: dict) -> Any:
         import gymnasium as gym
         import rushhour_gym  # noqa: F401  (registers RushHour*-v0)
         binary = spec.get("binary") or os.environ.get("RUSHHOUR_ENV_BIN")
@@ -78,19 +78,19 @@ class RushHourAdapter(EnvAdapter):
         self._last_info: dict = {}
         return gym.make(spec.get("game", "RushHour-Easy-v0"), render_mode="ansi")
 
-    def keymap(self, env: Any) -> SingleKeySpec:
+    def keymap(self) -> SingleKeySpec:
         combos = {frozenset([k]): v for k, v in _DEFAULT_KEYMAP.items()}
         return SingleKeySpec(combos=combos, noop=_NOOP)
 
-    def reset(self, env: Any, seed: int | None, spec: dict) -> tuple[Any, dict]:
-        obs, info = env.reset(seed=seed)
-        self._last_ansi = env.render() or ""
+    def reset(self, seed: int | None) -> tuple[Any, dict]:
+        obs, info = self.env.reset(seed=seed)
+        self._last_ansi = self.env.render() or ""
         self._ingest(info)
         self._selected = 0  # red car; same as the experiment's trial start
         self._last_obs, self._last_info = obs, info
         return obs, info
 
-    def step(self, env: Any, action: Any) -> tuple[Any, float, bool, bool, dict]:
+    def step(self, action: Any) -> tuple[Any, float, bool, bool, dict]:
         meta = int(action)
         if meta < 0:
             return self._ui_only()
@@ -100,8 +100,8 @@ class RushHourAdapter(EnvAdapter):
 
         dir_bit = 0 if meta == _MOVE_BACK else 1
         discrete = int(self._selected) * 2 + dir_bit
-        obs, reward, terminated, truncated, info = env.step(discrete)
-        self._last_ansi = env.render() or ""
+        obs, reward, terminated, truncated, info = self.env.step(discrete)
+        self._last_ansi = self.env.render() or ""
         self._ingest(info)
         # Keep the highlight on the car that was just acted on when the engine
         # reports a slot (illegal clicks still name a slot).
@@ -117,11 +117,11 @@ class RushHourAdapter(EnvAdapter):
         self._last_obs, self._last_info = obs, info
         return obs, float(reward), bool(terminated), bool(truncated), info
 
-    def render(self, env: Any) -> np.ndarray:
+    def render(self) -> np.ndarray:
         return _board_to_rgb(self._last_ansi, selected=self._selected_label())
 
     def capture(
-        self, env: Any, obs: Any, info: dict, want_blob: bool = True
+        self, obs: Any, info: dict, want_blob: bool = True
     ) -> FrameState:
         variables = {}
         if isinstance(info, dict) and "slot" in info:
