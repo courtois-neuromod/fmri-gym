@@ -1,10 +1,34 @@
 {
   "_game": "MiniHack: MiniHack-Eat-v0",
   "_note": "pip install minihack (needs setuptools<81).",
+  "_keys_note": "Discrete(85) full command set; we expose movement + eat. Compass 0-7 (0=N,1=E,2=S,3=W,4=NE,5=SE,6=SW,7=NW); 29=EAT. Arrows map to the cardinals, y/u/b/n to the diagonals, E to eat. turn_based:true is required -- noop is action 0 (=move N). Keep the message Controls text in sync with 'keys' by hand.",
+  "_keys_reference": "https://github.com/facebookresearch/minihack",
   "curriculum": [
-    {"type": "message", "text": "MiniHack: MiniHack-Eat-v0", "duration": 2.0},
+    {
+      "type": "message",
+      "align": "left",
+      "text": [
+        "MiniHack: Eat",
+        "",
+        "You're hungry. Walk onto the food on the ground,",
+        "then press E to eat it.",
+        "",
+        "Controls:",
+        "   ARROWS       move  N / S / W / E",
+        "   Y / U        move diagonally  NW / NE",
+        "   B / N        move diagonally  SW / SE",
+        "   E            eat food here",
+        "",
+        "(press SPACE to start)"
+      ]
+    },
     {"type": "fixation", "duration": 1.0},
-    {"backend": "minihack", "game": "MiniHack-Eat-v0", "fps": 15, "type": "game", "mode": "duration", "duration": 300.0},
+    {
+      "type": "game", "backend": "minihack", "game": "MiniHack-Eat-v0",
+      "keys": {"UP": 0, "DOWN": 2, "LEFT": 3, "RIGHT": 1, "Y": 7, "U": 4, "B": 6, "N": 5,
+               "E": 29},
+      "mode": "duration", "duration": 300.0, "fps": 15, "turn_based": true
+    },
     {"type": "fixation", "duration": 2.0}
   ]
 }

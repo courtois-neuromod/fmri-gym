@@ -1,10 +1,33 @@
 {
   "_game": "MiniHack: MiniHack-River-v0",
   "_note": "pip install minihack (needs setuptools<81).",
+  "_keys_note": "Discrete(8) compass action space: 0=N,1=E,2=S,3=W,4=NE,5=SE,6=SW,7=NW. Arrows map to the cardinals; NetHack's y/u/b/n map to the diagonals. turn_based:true is required -- noop is action 0 (=move N), so a real-time loop would auto-walk north. Keep the message Controls text in sync with 'keys' by hand.",
+  "_keys_reference": "https://github.com/facebookresearch/minihack",
   "curriculum": [
-    {"type": "message", "text": "MiniHack: MiniHack-River-v0", "duration": 2.0},
+    {
+      "type": "message",
+      "align": "left",
+      "text": [
+        "MiniHack: River",
+        "",
+        "Cross the river to reach the goal. Walk into a",
+        "boulder to push it into the water and build a",
+        "bridge to step across.",
+        "",
+        "Controls:",
+        "   ARROWS       move  N / S / W / E",
+        "   Y / U        move diagonally  NW / NE",
+        "   B / N        move diagonally  SW / SE",
+        "",
+        "(press SPACE to start)"
+      ]
+    },
     {"type": "fixation", "duration": 1.0},
-    {"backend": "minihack", "game": "MiniHack-River-v0", "fps": 15, "type": "game", "mode": "duration", "duration": 300.0},
+    {
+      "type": "game", "backend": "minihack", "game": "MiniHack-River-v0",
+      "keys": {"UP": 0, "DOWN": 2, "LEFT": 3, "RIGHT": 1, "Y": 7, "U": 4, "B": 6, "N": 5},
+      "mode": "duration", "duration": 300.0, "fps": 15, "turn_based": true
+    },
     {"type": "fixation", "duration": 2.0}
   ]
 }
