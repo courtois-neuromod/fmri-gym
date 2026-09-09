@@ -25,7 +25,7 @@
       "type": "game", "backend": "vizdoom", "game": "VizdoomDefendCenter-v1",
       "env_kwargs": {"max_buttons_pressed": 0, "render_hud": true, "render_minimal_hud": false, "render_weapon": true, "render_crosshair": true, "render_messages": true},
       "keys": {"LEFT": 3, "RIGHT": 2, "SPACE": 1},
-      "mode": "duration", "duration": 300.0, "fps": 20
+      "mode": "duration", "duration": 300.0, "fps": 35
     },
     {"type": "fixation", "duration": 2.0}
   ]

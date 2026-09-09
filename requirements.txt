@@ -1,6 +1,7 @@
 # Core (engine-agnostic)
 gymnasium
 pygame
+sounddevice
 numpy
 setuptools<81          # some backends (minihack) import pkg_resources
 
