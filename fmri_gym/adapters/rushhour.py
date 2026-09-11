@@ -30,6 +30,26 @@ part of the search -- so keep it the same across sessions being compared.
 Car geometry comes from the engine too, via ``obs_mode="cars"`` (slot-indexed
 rows of row/col/length/horizontal), rather than from re-reading the letters.
 
+The participant's experience of Rush-Hour's own SDL program (``main.go``,
+``rushui``) is ported here so a curriculum can present the whole task without
+leaving fmri-gym: the same look (1024x768, light board, flat cars in the same
+palette, red exit marker, white outline on the selected car, status line), the
+puzzles in library order (easiest first) when the phase says ``"puzzle_order":
+"library"`` or lists ``"puzzle_indices"``, and -- ``"paced"``, on by default
+with a puzzle sequence -- Rush-Hour's trial flow: a self-paced "Puzzle i of N,
+press any key" screen, a blank inter-trial interval (``"iti"``, 0.8 s), the
+board, and a "PUZZLE SOLVED!" hold (``"solved_feedback"``, 1.2 s). The logged
+variables carry the columns of Rush-Hour's results file (``event``, ``car``,
+``from_*``/``to_*``, ``n_slides``, ``solved``, ``t_ms``, ``trial_ms``).
+Pacing needs ``turn_based: true`` and uses fmri-gym's idle redraw
+(``idle_redraw``) for the time-driven screens.
+
+Not ported, and not portable: Rush-Hour stamps every keypress and display flip
+on SDL's monotonic clock and runs exclusive fullscreen; fmri-gym timestamps a
+key when its loop processes it, so a keypress is quantised to ``1/fps`` (set
+``fps`` high, e.g. 60, in a turn-based block: it only steps on keydown anyway)
+and flips are not recorded. Nor the solved sound, nor mouse play.
+
 Needs the Go binary ``rushhour-env`` built from the checkout:
     go build -o rushhour-env ./cmd/rushhour-env
 Point at it via the phase "binary" field or the RUSHHOUR_ENV_BIN env var; this
@@ -39,6 +59,7 @@ adapter also auto-finds the vendored copy under vendor/rush-hour-src/.
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import numpy as np
@@ -46,12 +67,40 @@ import numpy as np
 from .keyspec import SingleKeySpec
 from .base import EnvAdapter, FrameState
 
-# Distinct colors for car letters; 'A' (red player car) and exit are special.
-_PALETTE: list[tuple[int, int, int]] = [
-    (220, 60, 60), (70, 130, 220), (80, 190, 90), (230, 190, 60),
-    (170, 90, 200), (230, 140, 60), (90, 200, 200), (230, 120, 170),
-    (150, 110, 70), (120, 160, 90), (200, 200, 120), (110, 200, 160),
+# rushui's look (internal/rushui/render.go), in pixel coordinates (y down).
+# The Go program draws in a 1024x768 logical space; fmri-gym scales the frame
+# to the window with the aspect kept, so the same numbers give the same picture.
+_W, _H = 1024, 768
+_TILE = 90
+_BOARD_X0 = _W // 2 - 3 * _TILE          # 242: board is centred horizontally
+_BOARD_Y0 = _H // 2 - (3 * _TILE + 40)   # 74: shifted up to leave room for the status line
+_CAR_INSET = 4                           # coloured body inset inside its black plate
+_EXIT_W = 10                             # exit marker thickness at the right wall
+_STATUS_Y = _BOARD_Y0 + 6 * _TILE + 40   # status line, 40 px below the board
+_TARGET_ROW = 2
+_BG = (240, 240, 240)
+_GRID = (180, 180, 180)
+_EXIT = (220, 50, 50)
+_TEXT = (30, 30, 30)
+_OUTLINE = (0, 0, 0)
+_SELECT = (255, 255, 255)
+_ARROW = (255, 255, 255)
+# rushui.carColors: index 0 is the red target; the others cycle by the car's
+# alphabetical index (rush.Car.ID), i.e. ord(label) - ord("A").
+_CAR_COLORS: list[tuple[int, int, int]] = [
+    (220, 50, 50), (50, 120, 220), (50, 180, 80), (220, 160, 40),
+    (140, 60, 200), (200, 200, 50), (50, 180, 200),
 ]
+# Arrow geometry, as fractions of a tile (rushui.arrowPoints).
+_ARROW_TIP_INSET, _ARROW_LEN, _ARROW_HALF = 0.20, 0.34, 0.16
+_FONT_SIZE = 28
+
+# Trial flow, as in main.go.
+_PHASE_READY, _PHASE_ITI, _PHASE_PLAY, _PHASE_SOLVED = "ready", "iti", "play", "solved"
+# A press that arrived while the previous screen was up must not skip the
+# ready screen (showScreen drains those); events reach us only after the
+# solved hold, so the equivalent is to ignore presses in its first moments.
+_READY_GRACE = 0.25
 _VENDOR_BIN: str = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__)))), "vendor", "rush-hour-src", "rushhour-env")
 
@@ -77,6 +126,8 @@ _SIDEWAYS_PENALTY = 2 * 6
 
 class RushHourAdapter(EnvAdapter):
     name: str = "rushhour"
+    # Paced trials show time-driven screens; see session.py's turn-based loop.
+    idle_redraw: bool = True
 
     def _make(self, spec: dict) -> Any:
         import gymnasium as gym
@@ -97,29 +148,89 @@ class RushHourAdapter(EnvAdapter):
         # Skip cars that cannot move, as Rush-Hour does by default; see the
         # module docstring for why a study should not flip this mid-way.
         self._movable_only = bool(spec.get("movable_only", True))
+
+        # Which puzzle each episode gets: an explicit list, the library's own
+        # order (easiest first, what Rush-Hour's -n takes a prefix of), or --
+        # neither given -- the env's seeded draw from its pool.
+        self._puzzle_indices = spec.get("puzzle_indices")
+        self._library_order = spec.get("puzzle_order") == "library"
+        sequenced = self._library_order or bool(self._puzzle_indices)
+        # Rush-Hour's trial flow (ready screen, blank ITI, solved hold).
+        self._paced = bool(spec.get("paced", sequenced))
+        self._iti = float(spec.get("iti", 0.8))
+        self._solved_hold = float(spec.get("solved_feedback", 1.2))
+        self._n_trials = int(spec.get("n_episodes", 0)) if spec.get("mode") == "episode" else 0
+        self._episode = -1
+        self._phase = _PHASE_PLAY
+        self._phase_t0 = time.perf_counter()
+        self._trial_onset: float | None = None
+        self._event = ""
+        self._trial_ms = -1.0
+        self._font: Any = None
+
         # "cars" gives slot-indexed geometry straight from the engine; the
-        # observation itself is never logged, so this costs nothing.
+        # observation itself is never logged, so this costs nothing. The env
+        # ids carry a TimeLimit sized for agents (200-500 steps) that would
+        # truncate a participant on a hard puzzle, so it is lifted here.
         return gym.make(spec.get("game", "RushHour-Easy-v0"), render_mode="ansi",
-                        obs_mode="cars")
+                        obs_mode="cars",
+                        max_episode_steps=int(spec.get("max_episode_steps", 10 ** 6)))
 
     def _keyspec(self) -> SingleKeySpec:
         combos = {frozenset([k]): v for k, v in _DEFAULT_KEYMAP.items()}
         return SingleKeySpec(combos=combos, noop=_NOOP)
 
     def reset(self, seed: int | None) -> tuple[Any, dict]:
-        obs, info = self.env.reset(seed=seed)
+        # The loop ends an episode on the solving move and comes straight
+        # here, with the "PUZZLE SOLVED!" frame on screen: hold it, as
+        # main.go does, before the next puzzle replaces it.
+        self._hold_solved()
+        self._episode += 1
+
+        options = None
+        if self._puzzle_indices:
+            options = {"puzzle_index": int(
+                self._puzzle_indices[self._episode % len(self._puzzle_indices)])}
+        elif self._library_order:
+            options = {"puzzle_index": self._episode}
+        obs, info = self.env.reset(seed=seed, options=options)
         self._last_ansi = self.env.render() or ""
         self._ingest(obs, info)
         self._selected = 0  # red car; same as the experiment's trial start
         self._last_obs, self._last_info = obs, info
+        self._event = "trial_start"
+        self._trial_ms = -1.0
+
+        # Rush-Hour puts a ready screen before every puzzle but the first,
+        # whose press was the instruction screen's, and a blank ITI before all.
+        if not self._paced:
+            self._begin_trial()
+        elif self._episode > 0:
+            self._set_phase(_PHASE_READY)
+        else:
+            self._set_phase(_PHASE_ITI)
         return obs, info
 
     def step(self, action: Any) -> tuple[Any, float, bool, bool, dict]:
         meta = int(action)
+        self._advance()
+        if self._phase == _PHASE_READY:
+            if meta >= 0 and time.perf_counter() - self._phase_t0 >= _READY_GRACE:
+                self._set_phase(_PHASE_ITI)
+                self._event = "start"
+            else:
+                self._event = "ignored"
+            return self._ui_only()
+        if self._phase != _PHASE_PLAY:
+            self._event = "ignored"
+            return self._ui_only()
+
         if meta < 0:
+            self._event = "noop"
             return self._ui_only()
         if meta <= _SELECT_NEXT:
             self._do_select(meta)
+            self._event = "select"
             return self._ui_only()
 
         dir_bit = 0 if meta == _MOVE_BACK else 1
@@ -139,28 +250,42 @@ class RushHourAdapter(EnvAdapter):
         info = dict(info)
         info["env_action"] = discrete
         self._last_obs, self._last_info = obs, info
+        self._event = "move" if info.get("moved") else "blocked"
+        if terminated:
+            # Timed at the move that solved it, as Rush-Hour's trial_ms is.
+            self._event = "trial_end"
+            self._trial_ms = self._t_ms()
+            self._set_phase(_PHASE_SOLVED)
         return obs, float(reward), bool(terminated), bool(truncated), info
 
     def render(self) -> np.ndarray:
+        self._advance()
+        if self._phase == _PHASE_READY:
+            n = f" of {self._n_trials}" if self._n_trials else ""
+            return _draw_screen([f"Puzzle {self._episode + 1}{n}", "",
+                                 "Press any key or button to start."], self._get_font())
+        if self._phase == _PHASE_ITI:
+            return _draw_screen([], self._get_font())
+        if self._phase == _PHASE_SOLVED:
+            # No selection and no arrows on the solved board, as in main.go.
+            return _draw_board(self._cars, None, [], "PUZZLE SOLVED!", self._get_font())
+
         car = self._selected_car()
-        arrows: list[tuple[int, int, str]] = []
+        arrows: list[tuple[dict[str, Any], int]] = []
         if car is not None:
             back, forward = self._can_move(car)
-            horizontal = bool(car["horizontal"])
-            row, col, length = car["row"], car["col"], car["length"]
-            if back:  # towards index 0: left for a horizontal car, up for a vertical one
-                arrows.append((row, col, "left" if horizontal else "up"))
+            if back:
+                arrows.append((car, -1))
             if forward:
-                tail_r = row if horizontal else row + length - 1
-                tail_c = col + length - 1 if horizontal else col
-                arrows.append((tail_r, tail_c, "right" if horizontal else "down"))
-        return _board_to_rgb(self._last_ansi, selected=self._selected_label(),
-                             arrows=arrows)
+                arrows.append((car, 1))
+        n = f"/{self._n_trials}" if self._n_trials else ""
+        status = f"Puzzle {self._episode + 1}{n} - free the RED car"
+        return _draw_board(self._cars, car, arrows, status, self._get_font())
 
     def capture(
         self, obs: Any, info: dict, want_blob: bool = True
     ) -> FrameState:
-        variables = {}
+        variables: dict[str, Any] = {}
         if isinstance(info, dict) and "slot" in info:
             try:
                 variables["slot"] = int(info["slot"])
@@ -174,7 +299,77 @@ class RushHourAdapter(EnvAdapter):
             variables["illegal"] = bool(info.get("illegal", False))
             variables["env_action"] = int(info.get("env_action", _NOOP))
         variables["selected"] = int(self._selected)
+
+        # The columns of Rush-Hour's results file (internal/rushlog/row.go), so
+        # the two programs' data read the same way. A row that records no
+        # displacement -- a select, a blocked move -- has from == to.
+        variables["event"] = self._event
+        variables["phase"] = self._phase
+        variables["trial"] = self._episode + 1
+        variables["puzzle"] = str(info.get("puzzle", "")) if isinstance(info, dict) else ""
+        variables["puzzle_index"] = int(info.get("puzzle_index", -1)) if isinstance(info, dict) else -1
+        variables["min_moves"] = int(info.get("min_moves", -1)) if isinstance(info, dict) else -1
+        car: dict[str, Any] | None = None
+        frm = to = (-1, -1)
+        if self._event in ("move", "blocked", "trial_end") and isinstance(info, dict):
+            car = self._by_slot.get(int(info.get("slot", -1)))
+            frm = tuple(int(x) for x in info.get("from", frm))
+            to = tuple(int(x) for x in info.get("to", to))
+        elif self._event == "select":
+            car = self._selected_car()
+            if car is not None:
+                frm = to = (int(car["row"]), int(car["col"]))
+        variables["car"] = str(car["label"]) if car else ""
+        variables["orientation"] = ("H" if car["horizontal"] else "V") if car else ""
+        variables["from_row"], variables["from_col"] = frm
+        variables["to_row"], variables["to_col"] = to
+        variables["n_slides"] = int(info.get("n_slides", 0)) if isinstance(info, dict) else 0
+        variables["solved"] = self._event == "trial_end"
+        variables["t_ms"] = self._t_ms()
+        variables["trial_ms"] = self._trial_ms
         return FrameState(blob=None, variables=variables)
+
+    def close(self) -> None:
+        # The last puzzle's solved frame is on screen when the block ends.
+        self._hold_solved()
+        super().close()
+
+    # ── Trial flow ───────────────────────────────────────────────────────────
+
+    def _set_phase(self, phase: str) -> None:
+        self._phase = phase
+        self._phase_t0 = time.perf_counter()
+
+    def _begin_trial(self) -> None:
+        self._set_phase(_PHASE_PLAY)
+        self._trial_onset = self._phase_t0
+
+    def _advance(self) -> None:
+        """Time-driven transition: the blank ITI ends with the board's onset."""
+        if self._phase == _PHASE_ITI and time.perf_counter() - self._phase_t0 >= self._iti:
+            self._begin_trial()
+
+    def _hold_solved(self) -> None:
+        if self._phase == _PHASE_SOLVED:
+            left = self._solved_hold - (time.perf_counter() - self._phase_t0)
+            if left > 0:
+                time.sleep(left)
+            self._phase = _PHASE_PLAY
+
+    def _t_ms(self) -> float:
+        """Milliseconds since the board appeared (Rush-Hour's t_ms); -1 outside a trial."""
+        if self._trial_onset is None or self._phase not in (_PHASE_PLAY, _PHASE_SOLVED):
+            return -1.0
+        ref = self._phase_t0 if self._phase == _PHASE_SOLVED else time.perf_counter()
+        return (ref - self._trial_onset) * 1000.0
+
+    def _get_font(self) -> Any:
+        if self._font is None:
+            import pygame
+            if not pygame.font.get_init():
+                pygame.font.init()
+            self._font = pygame.font.Font(pygame.font.get_default_font(), _FONT_SIZE)
+        return self._font
 
     # ── Selection / board helpers ─────────────────────────────────────────────
 
@@ -207,14 +402,6 @@ class RushHourAdapter(EnvAdapter):
         """The highlighted car, by SLOT -- slots are padded, list indices are not."""
         car = self._by_slot.get(int(self._selected))
         return car or (self._cars[0] if self._cars else None)
-
-    def _selected_label(self) -> str | None:
-        car = self._selected_car()
-        if car is not None:
-            return car.get("label")
-        if self._labels:
-            return self._labels[0]
-        return "A"
 
     def _can_move(self, car: dict[str, Any]) -> tuple[bool, bool]:
         """(back, forward) legality for one car, straight from the engine mask."""
@@ -386,62 +573,121 @@ def _cycle(
     return from_car
 
 
-def _arrow_mask(size: int, direction: str) -> np.ndarray:
-    """A filled triangle pointing `direction`, as a size x size boolean mask."""
-    tri = np.zeros((size, size), dtype=bool)
-    mid, last = size // 2, max(size - 1, 1)
-    for j in range(size):                      # j: base (0) -> apex (size-1)
-        half = ((last - j) * mid) // last
-        tri[max(mid - half, 0):mid + half + 1, j] = True
-    # rot90 turns counter-clockwise, and the triangle above points right.
-    return np.rot90(tri, {"right": 0, "up": 1, "left": 2, "down": 3}[direction])
+def _fill_rect(img: np.ndarray, x0: float, y0: float, x1: float, y1: float,
+               color: tuple[int, int, int]) -> None:
+    xa, ya = max(int(round(x0)), 0), max(int(round(y0)), 0)
+    xb, yb = min(int(round(x1)), img.shape[1]), min(int(round(y1)), img.shape[0])
+    if xb > xa and yb > ya:
+        img[ya:yb, xa:xb] = color
 
 
-def _draw_arrow(img: np.ndarray, row: int, col: int, direction: str,
-                cell: int, color: tuple[int, int, int] = (255, 255, 255)) -> None:
-    """Mark one legal slide, on the end cell of the car that would make it."""
-    pad = max(cell // 5, 1)
-    size = cell - 2 * pad
-    y0, x0 = row * cell + pad, col * cell + pad
-    if size <= 0 or y0 + size > img.shape[0] or x0 + size > img.shape[1]:
+def _fill_triangle(img: np.ndarray, pts: list[tuple[float, float]],
+                   color: tuple[int, int, int]) -> None:
+    """Rasterise a filled triangle (pixel centres inside, by barycentric sign)."""
+    (x0, y0), (x1, y1), (x2, y2) = pts
+    xa, xb = int(np.floor(min(x0, x1, x2))), int(np.ceil(max(x0, x1, x2))) + 1
+    ya, yb = int(np.floor(min(y0, y1, y2))), int(np.ceil(max(y0, y1, y2))) + 1
+    xa, ya = max(xa, 0), max(ya, 0)
+    xb, yb = min(xb, img.shape[1]), min(yb, img.shape[0])
+    if xb <= xa or yb <= ya:
         return
-    block = img[y0:y0 + size, x0:x0 + size]
-    block[_arrow_mask(size, direction)] = color
+    ys, xs = np.mgrid[ya:yb, xa:xb]
+    px, py = xs + 0.5, ys + 0.5
+    e0 = (x1 - x0) * (py - y0) - (y1 - y0) * (px - x0)
+    e1 = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
+    e2 = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2)
+    inside = ((e0 >= 0) & (e1 >= 0) & (e2 >= 0)) | ((e0 <= 0) & (e1 <= 0) & (e2 <= 0))
+    img[ya:yb, xa:xb][inside] = color
 
 
-def _board_to_rgb(
-    ansi: str, cell: int = 64, selected: str | None = None,
-    arrows: list[tuple[int, int, str]] | None = None,
-) -> np.ndarray:
-    """Render the ANSI letter grid to a colored pixel board."""
-    rows = [r for r in (ansi or "").split("\n") if r != ""]
-    if not rows:
-        return np.zeros((cell * 6, cell * 6, 3), dtype=np.uint8)
-    h = len(rows)
-    w = max(len(r) for r in rows)
-    img = np.full((h * cell, w * cell, 3), 30, dtype=np.uint8)
-    for r, line in enumerate(rows):
-        for c, ch in enumerate(line):
-            y0, x0 = r * cell, c * cell
-            if ch in (" ", "o"):
-                color = (45, 45, 45)          # empty
-            elif ch == "<":
-                color = (255, 255, 255)       # exit marker
-            elif ch == "A":
-                color = (230, 40, 40)         # red player car
-            elif ch.isalpha():
-                color = _PALETTE[(ord(ch.upper()) - ord("A")) % len(_PALETTE)]
-            else:
-                color = (60, 60, 60)
-            # draw a padded block so grid lines show
-            img[y0 + 2:y0 + cell - 2, x0 + 2:x0 + cell - 2] = color
-            if selected and ch.upper() == selected.upper():
-                # Bright border so the selected car is obvious without arrows.
-                img[y0:y0 + 3, x0:x0 + cell] = (255, 255, 255)
-                img[y0 + cell - 3:y0 + cell, x0:x0 + cell] = (255, 255, 255)
-                img[y0:y0 + cell, x0:x0 + 3] = (255, 255, 255)
-                img[y0:y0 + cell, x0 + cell - 3:x0 + cell] = (255, 255, 255)
-    # Drawn last, so they sit on top of the selected car (as rushui does).
-    for row, col, direction in (arrows or []):
-        _draw_arrow(img, row, col, direction, cell)
+def _car_rect(car: dict[str, Any]) -> tuple[float, float, float, float]:
+    """(x0, y0, x1, y1) of the car's cells, in pixels (rushui.CarRect)."""
+    x0 = _BOARD_X0 + car["col"] * _TILE
+    y0 = _BOARD_Y0 + car["row"] * _TILE
+    w = _TILE * (car["length"] if car["horizontal"] else 1)
+    h = _TILE * (1 if car["horizontal"] else car["length"])
+    return x0, y0, x0 + w, y0 + h
+
+
+def _car_color(car: dict[str, Any]) -> tuple[int, int, int]:
+    """rushui.carColor: red for the target, else by alphabetical index."""
+    label = str(car.get("label", "?"))
+    if label == "A" or int(car.get("slot", -1)) == 0:
+        return _CAR_COLORS[0]
+    idx = ord(label) - ord("A") if label.isalpha() else int(car.get("slot", 1))
+    return _CAR_COLORS[idx % (len(_CAR_COLORS) - 1) + 1]
+
+
+def _arrow_points(car: dict[str, Any], direction: int) -> list[tuple[float, float]]:
+    """rushui.arrowPoints, tip first: a triangle inside the leading end of the
+    car, pointing the way a step in ``direction`` (-1 back, +1 forward) goes."""
+    x0, y0, x1, y1 = _car_rect(car)
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    tip_inset, length, half = _TILE * _ARROW_TIP_INSET, _TILE * _ARROW_LEN, _TILE * _ARROW_HALF
+    if car["horizontal"]:
+        tip_x = cx + direction * ((x1 - x0) / 2 - tip_inset)
+        back_x = tip_x - direction * length
+        return [(tip_x, cy), (back_x, cy + half), (back_x, cy - half)]
+    tip_y = cy + direction * ((y1 - y0) / 2 - tip_inset)
+    back_y = tip_y - direction * length
+    return [(cx, tip_y), (cx + half, back_y), (cx - half, back_y)]
+
+
+def _blit_text(img: np.ndarray, text: str, cx: float, cy: float, font: Any,
+               color: tuple[int, int, int] = _TEXT) -> None:
+    """Draw one line of text centred on (cx, cy)."""
+    if not text:
+        return
+    import pygame
+    surf = font.render(text, True, color, _BG)
+    arr = pygame.surfarray.array3d(surf).transpose(1, 0, 2)
+    h, w = arr.shape[:2]
+    x0, y0 = int(round(cx - w / 2)), int(round(cy - h / 2))
+    xa, ya = max(x0, 0), max(y0, 0)
+    xb, yb = min(x0 + w, img.shape[1]), min(y0 + h, img.shape[0])
+    if xb > xa and yb > ya:
+        img[ya:yb, xa:xb] = arr[ya - y0:yb - y0, xa - x0:xb - x0]
+
+
+def _draw_screen(lines: list[str], font: Any) -> np.ndarray:
+    """A text screen (or, with no lines, the blank ITI), centred like
+    goxpyriment's FittedTextBox."""
+    img = np.empty((_H, _W, 3), dtype=np.uint8)
+    img[:] = _BG
+    if lines:
+        pitch = int(_FONT_SIZE * 1.4)
+        top = _H / 2 - pitch * (len(lines) - 1) / 2
+        for i, line in enumerate(lines):
+            _blit_text(img, line, _W / 2, top + i * pitch, font)
+    return img
+
+
+def _draw_board(cars: list[dict[str, Any]], selected: dict[str, Any] | None,
+                arrows: list[tuple[dict[str, Any], int]], status: str,
+                font: Any) -> np.ndarray:
+    """Port of rushui.DrawBoard: grid, exit marker, cars (a black plate with
+    the coloured body inset; white plate for the selection), the legal-slide
+    arrows on top, and the status line."""
+    img = np.empty((_H, _W, 3), dtype=np.uint8)
+    img[:] = _BG
+    x_end, y_end = _BOARD_X0 + 6 * _TILE, _BOARD_Y0 + 6 * _TILE
+    for i in range(7):
+        y = _BOARD_Y0 + i * _TILE
+        x = _BOARD_X0 + i * _TILE
+        img[y, _BOARD_X0:x_end + 1] = _GRID
+        img[_BOARD_Y0:y_end + 1, x] = _GRID
+    # Exit marker on the right wall of the target row.
+    ey = _BOARD_Y0 + _TARGET_ROW * _TILE
+    _fill_rect(img, x_end - _EXIT_W, ey, x_end, ey + _TILE, _EXIT)
+    for car in cars:
+        x0, y0, x1, y1 = _car_rect(car)
+        plate = _SELECT if (selected is not None and car["slot"] == selected["slot"]) else _OUTLINE
+        k = _CAR_INSET / 2
+        _fill_rect(img, x0 + k, y0 + k, x1 - k, y1 - k, plate)
+        k = 3 * _CAR_INSET / 2
+        _fill_rect(img, x0 + k, y0 + k, x1 - k, y1 - k, _car_color(car))
+    # Drawn last, so they sit on top of the selected car.
+    for car, direction in arrows:
+        _fill_triangle(img, _arrow_points(car, direction), _ARROW)
+    _blit_text(img, status, _W / 2, _STATUS_Y, font)
     return img

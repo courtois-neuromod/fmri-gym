@@ -109,8 +109,14 @@ python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/crafter__cra
 ### Rush Hour
 
 ```bash
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour__easy.json
+python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
+python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour_complete.json    # Rush-Hour's own session: 12 puzzles, easiest first, self-paced
 ```
+
+`rushhour_complete.json` reproduces the flow of the Rush-Hour program itself
+(ready screen before each puzzle, blank ITI, solved hold, its look and its log
+columns) inside fmri-gym; see the `_session_note` in the file for what is not
+reproduced (SDL-clock timestamps).
 
 Needs the Go binary from §1. After the build step you should have
 `vendor/rush-hour-src/rushhour-env` in the repo — leave it there; the adapter

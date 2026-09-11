@@ -116,7 +116,7 @@ the right per-game keymap/settings baked in. Coverage by class:
 | `vizdoom__` | 1 | defend_center (Doom; COOM's engine; other Vizdoom*-v1 scenarios) |
 | `overcooked__` | 1 | cramped_room (co-op cooking; other layouts) |
 | `baba__` | 1 | make_win (rule-manipulation puzzle; other ids) |
-| `rushhour__` | 1 | easy (sliding-block puzzle; needs the Go engine built) |
+| `rushhour__` | 1 | easy (sliding-block puzzle; needs the Go engine built). `rushhour_complete.json` is the full self-paced session of Rush-Hour's own program: 12 puzzles easiest-first, ready screens, solved hold |
 | `supertuxkart__` | 1 | race (3D racing; needs a real GL display) |
 | `retro__` | 3 | tobutobugirldx, nomolos, anguna (need ROMs imported) |
 
