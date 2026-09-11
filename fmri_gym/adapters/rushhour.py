@@ -50,10 +50,11 @@ key when its loop processes it, so a keypress is quantised to ``1/fps`` (set
 ``fps`` high, e.g. 60, in a turn-based block: it only steps on keydown anyway)
 and flips are not recorded. Nor the solved sound, nor mouse play.
 
-Needs the Go binary ``rushhour-env`` built from the checkout:
-    go build -o rushhour-env ./cmd/rushhour-env
-Point at it via the phase "binary" field or the RUSHHOUR_ENV_BIN env var; this
-adapter also auto-finds the vendored copy under vendor/rush-hour-src/.
+The engine is the Go binary ``rushhour-env``. ``pip install rushhour-gym``
+(PyPI) fetches the one from the matching Rush-Hour release on first use, so
+nothing needs building. To use a binary of your own, name it in the phase's
+"binary" field or ``$RUSHHOUR_ENV_BIN``; a copy at vendor/rush-hour-src/ (a
+developer's checkout, gitignored) is picked up too.
 """
 
 from __future__ import annotations

@@ -20,7 +20,7 @@ through small pluggable **adapters**:
 | `vizdoom`     | Doom action-shooter scenarios (COOM's engine) | ViZDoom |
 | `overcooked`  | Overcooked co-op cooking (social) | overcooked_ai |
 | `baba`        | Baba Is You (rule-manipulation puzzle) | baba-is-ai |
-| `rushhour`    | Rush Hour sliding-block puzzle | rushhour_gym + Go engine |
+| `rushhour`    | Rush Hour sliding-block puzzle | `rushhour-gym` (PyPI; fetches its Go engine) |
 | `supertuxkart`| SuperTuxKart 3D racing (needs a real GL display) | pystk2 |
 
 > **All backends run in ONE env and ONE process.** Verified: a single session
@@ -116,7 +116,7 @@ the right per-game keymap/settings baked in. Coverage by class:
 | `vizdoom__` | 1 | defend_center (Doom; COOM's engine; other Vizdoom*-v1 scenarios) |
 | `overcooked__` | 1 | cramped_room (co-op cooking; other layouts) |
 | `baba__` | 1 | make_win (rule-manipulation puzzle; other ids) |
-| `rushhour__` | 1 | easy (sliding-block puzzle; needs the Go engine built). `rushhour_complete.json` is the full self-paced session of Rush-Hour's own program: 12 puzzles easiest-first, ready screens, solved hold |
+| `rushhour__` | 1 | easy (sliding-block puzzle). `rushhour_complete.json` is the full self-paced session of Rush-Hour's own program: 12 puzzles easiest-first, ready screens, solved hold |
 | `supertuxkart__` | 1 | race (3D racing; needs a real GL display) |
 | `retro__` | 3 | tobutobugirldx, nomolos, anguna (need ROMs imported) |
 
@@ -129,7 +129,7 @@ playwright, box2d-py, MuJoCo GL, ROM import).
 > with a `_status`/`_note` explaining why: games with no real-time pixel
 > interface — `2048` (upstream reset bug), `pathery`/`wordle` (text/placement),
 > `tile-match-gym` (display-only, `Discrete(84)` swaps → no keyboard play),
-> `mastermind` (needs Python ≥3.13), `rush-hour` (unpackaged), and heavy engines
+> `mastermind` (needs Python ≥3.13), and heavy engines
 > `coom` (ViZDoom) / `craftium` (Luanti) that need a dedicated adapter.
 
 Runtime flow: experimenter screen (**SPACE**) → "Waiting for scanner..." →
