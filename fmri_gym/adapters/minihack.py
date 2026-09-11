@@ -67,5 +67,5 @@ class MiniHackAdapter(EnvAdapter):
         # pixel array (it's reconstructable via seed + action replay).
         for k in ("blstats", "glyphs", "message"):
             if isinstance(obs, dict) and k in obs:
-                variables[k] = np.asarray(obs[k])
+                variables[k] = np.asarray(obs[k]).copy()
         return FrameState(blob=None, variables=variables)
