@@ -7,8 +7,12 @@ Discrete(32): ``action = slot * 2 + direction`` (0=left/up, 1=right/down).
 Humans do not press Discrete indices. Matching the experiment's own
 ``rushinput.DefaultMap``, we expose a small meta-action keymap:
 
-  * arrows / 3,4  -- select a car (spatial neighbour, or cycle prev/next)
-  * 1,2 / , .     -- slide the selected car back (left/up) or forward (right/down)
+  * LEFT/RIGHT, 3/4  -- select the previous / next car (board order)
+  * UP/DOWN, 1/2, ,. -- slide the selected car back (left/up) or forward (right/down)
+
+That is Rush-Hour's four-button response-box scheme, which its arrow keys carry
+too. Its gamepad d-pad selects spatially instead; the spatial meta-actions are
+kept here (``_SELECT_UP`` ...) so a curriculum can bind keys to them.
 
 Select meta-actions update a local highlight and do not call ``env.step``.
 Move meta-actions become a Discrete index and are what get logged as
@@ -18,10 +22,10 @@ Two things the engine knows and a bare letter grid does not are used here. The
 per-step ``action_mask`` says which of the selected car's two slides are legal,
 so they are drawn as arrows on the car -- the same affordance Rush-Hour's own
 SDL build gives (``rushui.DrawBoard``), without which a refused move and a
-dropped keypress look identical. The phase flag ``movable_only`` additionally
-restricts selection to cars that can move at all; it is off by default because
-it is NOT Rush-Hour behaviour -- there, selection walks every car -- and it
-removes part of the search.
+dropped keypress look identical. The phase flag ``movable_only`` (default on,
+like Rush-Hour's ``-movable-only``) restricts selection to cars that can move at
+all. Turning it off is a different task -- noticing which cars are stuck becomes
+part of the search -- so keep it the same across sessions being compared.
 
 Car geometry comes from the engine too, via ``obs_mode="cars"`` (slot-indexed
 rows of row/col/length/horizontal), rather than from re-reading the letters.
@@ -60,8 +64,8 @@ _NOOP = -1
 
 # Mirrors https://github.com/chrplr/Rush-Hour/blob/main/internal/rushinput/keymap.go
 _DEFAULT_KEYMAP: dict[str, int] = {
-    "UP": _SELECT_UP, "DOWN": _SELECT_DOWN,
-    "LEFT": _SELECT_LEFT, "RIGHT": _SELECT_RIGHT,
+    "LEFT": _SELECT_PREV, "RIGHT": _SELECT_NEXT,
+    "UP": _MOVE_BACK, "DOWN": _MOVE_FORWARD,
     "3": _SELECT_PREV, "4": _SELECT_NEXT,
     "1": _MOVE_BACK, "2": _MOVE_FORWARD,
     "COMMA": _MOVE_BACK, "PERIOD": _MOVE_FORWARD,
@@ -90,9 +94,9 @@ class RushHourAdapter(EnvAdapter):
         self._selected = 0
         self._last_obs: Any = None
         self._last_info: dict = {}
-        # Opt-in: skip cars that cannot move. Not Rush-Hour parity -- see module
-        # docstring -- so a study comparing the two should leave it off.
-        self._movable_only = bool(spec.get("movable_only", False))
+        # Skip cars that cannot move, as Rush-Hour does by default; see the
+        # module docstring for why a study should not flip this mid-way.
+        self._movable_only = bool(spec.get("movable_only", True))
         # "cars" gives slot-indexed geometry straight from the engine; the
         # observation itself is never logged, so this costs nothing.
         return gym.make(spec.get("game", "RushHour-Easy-v0"), render_mode="ansi",
@@ -222,12 +226,12 @@ class RushHourAdapter(EnvAdapter):
         return bool(self._mask[i]), bool(self._mask[i + 1])
 
     def _candidates(self) -> list[dict[str, Any]]:
-        """Cars the selection may land on."""
+        """Cars the selection may land on. Empty when nothing qualifies, in
+        which case the selection stays where it is (rush.Board.CycleAmong /
+        NeighbourAmong return ``from``)."""
         if not self._movable_only:
             return self._cars
-        movable = [c for c in self._cars if any(self._can_move(c))]
-        # A solved or wedged board has nothing movable; never strand the cursor.
-        return movable or self._cars
+        return [c for c in self._cars if any(self._can_move(c))]
 
     def _do_select(self, meta: int) -> None:
         cars = self._candidates()
@@ -235,9 +239,9 @@ class RushHourAdapter(EnvAdapter):
             return
         cur = self._selected_car() or cars[0]
         if meta == _SELECT_PREV:
-            nxt = _cycle(cars, cur, -1)
+            nxt = _cycle(self._cars, cars, cur, -1)
         elif meta == _SELECT_NEXT:
-            nxt = _cycle(cars, cur, 1)
+            nxt = _cycle(self._cars, cars, cur, 1)
         else:
             d_row, d_col = {
                 _SELECT_UP: (-1, 0), _SELECT_DOWN: (1, 0),
@@ -361,17 +365,25 @@ def _neighbour(
 
 
 def _cycle(
-    cars: list[dict[str, Any]], from_car: dict[str, Any], delta: int
+    all_cars: list[dict[str, Any]], ok: list[dict[str, Any]],
+    from_car: dict[str, Any], delta: int,
 ) -> dict[str, Any]:
-    """Port of rush.Board.Cycle — walk vehicles in board order, wrapping."""
-    if not cars:
+    """Port of rush.Board.CycleAmong: from ``from_car``'s place in board
+    order, step ``delta`` (±1) past cars not in ``ok`` until one is, wrapping.
+    Walking on from the current position -- rather than re-entering the ring
+    at an end -- is what makes a car stuck by its own move hand over to its
+    board-order successor, as it does in Rush-Hour."""
+    n = len(all_cars)
+    if n == 0 or not ok:
         return from_car
-    idx = next((i for i, c in enumerate(cars) if c["slot"] == from_car["slot"]), None)
-    if idx is None:
-        # The current car was filtered out (movable_only): enter the ring at
-        # its end, so one press still steps once rather than twice.
-        return cars[0] if delta > 0 else cars[-1]
-    return cars[(idx + delta) % len(cars)]
+    accepted = {c["slot"] for c in ok}
+    idx = next((i for i, c in enumerate(all_cars) if c["slot"] == from_car["slot"]), 0)
+    step = 1 if delta > 0 else -1
+    for k in range(1, n + 1):
+        cand = all_cars[(idx + k * step) % n]
+        if cand["slot"] in accepted:
+            return cand
+    return from_car
 
 
 def _arrow_mask(size: int, direction: str) -> np.ndarray:
