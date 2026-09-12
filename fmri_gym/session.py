@@ -286,7 +286,6 @@ class Session:
 
         ## Reset environment and show initial state
         obs, info = adapter.reset(seed)
-        print(adapter.has_audio)
         if adapter.has_audio:
             first_audio_buffer = adapter.get_audio_buffer()
             self.audio_stream = SoundDeviceGameBlockStream(

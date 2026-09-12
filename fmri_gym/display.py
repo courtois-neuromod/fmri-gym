@@ -38,7 +38,6 @@ class Display:
         self._flags = pygame.FULLSCREEN if fullscreen else 0
         self._caption = caption
         self._init_display()
-        self.prev_flip_time = 0
 
     def _init_display(self) -> None:
         """(Re)initialize pygame and create the screen + fonts."""
@@ -73,9 +72,6 @@ class Display:
         rect = surf.get_rect(center=(self.size[0] // 2, self.size[1] // 2))
         self.screen.blit(surf, rect.topleft)
         pygame.display.flip()
-        self.flip_time = pygame.time.get_ticks()
-        print(self.flip_time - self.prev_flip_time)
-        self.prev_flip_time = self.flip_time
 
     def _wrap(self, font: pygame.font.Font, line: str, max_w: int) -> list[str]:
         """Word-wrap one logical line so no rendered line exceeds ``max_w`` px.
