@@ -61,6 +61,7 @@ class EnvAdapter:
         :param spec: game-phase config dict from the curriculum (already
             validated for the keys this backend cares about).
         """
+        self.has_audio = False
         self.spec = spec
         self.env = self._make(spec)
         self.keyspec = self._keyspec()

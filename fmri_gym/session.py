@@ -18,6 +18,7 @@ import pygame
 
 from .adapters import get_adapter
 from .display import Display
+from .audio import SoundDeviceGameBlockStream
 from .keys import held_key_names, key_name
 from .logging import Logger
 
@@ -173,7 +174,7 @@ class Session:
         _wait_for_char(EXPERIMENTER_KEY, dummy_trigger=self.dummy_trigger)
         self.display.draw_text("Waiting for scanner...")
         _wait_for_char(TRIGGER_KEY, dummy_trigger=self.dummy_trigger)
-        
+
         self.clock.trigger()
         self.logger.set_trigger_time()
 
@@ -222,7 +223,7 @@ class Session:
         questions = phase.get("questions", [])
         n_points = phase.get("n_points", 7)
         onset = self.clock.session_time()
-        
+
         responses = []
         for q in questions:
             value = (n_points + 1) // 2
@@ -285,6 +286,16 @@ class Session:
 
         ## Reset environment and show initial state
         obs, info = adapter.reset(seed)
+        print(adapter.has_audio)
+        if adapter.has_audio:
+            first_audio_buffer = adapter.get_audio_buffer()
+            self.audio_stream = SoundDeviceGameBlockStream(
+                adapter.get_audio_sampling_rate(),
+                first_audio_buffer.shape[0],
+                first_audio_buffer.shape[1],
+                dtype=first_audio_buffer.dtype,
+            )
+            self.audio_stream.play()
         self.display.draw_frame(adapter.render())
 
         ## Loop over frames within episode
@@ -308,6 +319,8 @@ class Session:
                 action = adapter.keyspec.resolve(held_key_names())
 
             obs, reward, terminated, truncated, info = adapter.step(action)
+            if adapter.has_audio:
+                self.audio_stream.put(adapter.get_audio_buffer())
             # Anchor a full savestate at episode start and every stride.
             save_blob = (ep_frame % state_stride == 0)
             ep_frame += 1
@@ -329,6 +342,8 @@ class Session:
                 frames["variables"][k].append(v)
 
             self.display.draw_frame(adapter.render())
+        if adapter.has_audio:
+            self.audio_stream.stop()
         return False
 
     def _game(self, phase: dict, index: int) -> None:
@@ -410,7 +425,7 @@ class Session:
         })
         if user_quit:
             raise KeyboardInterrupt
-        
+
     def run(self) -> None:
         """Run the full curriculum: trigger wait, then each phase in order.
 

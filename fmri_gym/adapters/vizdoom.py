@@ -119,14 +119,24 @@ class VizDoomAdapter(EnvAdapter):
         :return: a ViZDoom Gymnasium environment.
         """
         from vizdoom import gymnasium_wrapper  # noqa: F401  (registers Vizdoom*-v1)
-        return gym.make(spec["game"], render_mode="rgb_array",
+        env = gym.make(spec["game"], render_mode="rgb_array",
                         **spec.get("env_kwargs", {}))
+        env.unwrapped.game.set_audio_buffer_enabled(True)
+        self.has_audio = True
+        return env
 
     def _keyspec(self) -> KeySpec:
         return _get_default_key_to_action_map(self.env)
 
     def render(self) -> np.ndarray:
         return np.asarray(self.env.render())
+
+    def get_audio_buffer(self) -> np.ndarray:
+        if self.env.unwrapped.state:
+            return self.env.unwrapped.state.audio_buffer
+
+    def get_audio_sampling_rate(self) -> int:
+        return self.env.unwrapped.game.get_audio_sampling_rate()
 
     def capture(self, obs: Any, info: dict, want_blob: bool = True) -> FrameState:
         variables = {}
