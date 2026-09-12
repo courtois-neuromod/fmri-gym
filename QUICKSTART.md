@@ -112,10 +112,8 @@ python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour__ea
 python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour_complete.json    # Rush-Hour's own session: 12 puzzles, easiest first, self-paced
 ```
 
-`rushhour_complete.json` reproduces the flow of the Rush-Hour program itself
-(ready screen before each puzzle, blank ITI, solved hold, its look and its log
-columns) inside fmri-gym; see the `_session_note` in the file for what is not
-reproduced (SDL-clock timestamps).
+`rushhour_complete.json` is the Rush-Hour program's own session (ready screen
+before each puzzle, blank interval, solved hold); see its `_session_note`.
 
 The engine binary is fetched on first run (see §1); nothing to build.
 

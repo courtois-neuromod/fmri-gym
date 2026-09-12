@@ -253,85 +253,25 @@ URL), `games_dir` (override the vendored dir), `headed` (show the window),
 
 ## Running Rush-Hour
 
-[Rush-Hour](https://github.com/chrplr/Rush-Hour) is the sliding-block puzzle
-(free the red car through the exit on the right), written as a psychophysics
-experiment in Go with a Gymnasium interface, `rushhour-gym`. The rules run in a
-small Go engine binary (`rushhour-env`) and never in Python, so an agent and a
-participant play exactly the same game; the `rushhour` backend adds the
-button-driven selection interface of the Rush-Hour program and draws the
-board the way it does.
-
-**Install.** Nothing beyond `pip install -r requirements.txt`: `rushhour-gym`
-comes from PyPI, and on first use it downloads the `rushhour-env` of the
-matching Rush-Hour release into `~/.cache/rushhour-gym/` (checksum-verified;
-Linux x86-64, macOS arm64, Windows x86-64). For a machine without network
-access, run a Rush Hour config once while online or copy that cache directory
-over; to use a binary of your own — from a
-[release archive](https://github.com/chrplr/Rush-Hour/releases) or built from a
-checkout with `go build -o rushhour-env ./cmd/rushhour-env` — set
-`RUSHHOUR_ENV_BIN=/path/to/rushhour-env` or the phase's `"binary"` field.
-`RUSHHOUR_ENV_OFFLINE=1` forbids the download.
-
-**Start.** Two configs:
+[Rush-Hour](https://github.com/chrplr/Rush-Hour) is a sliding-block puzzle
+written as a psychophysics experiment in Go, with its rules in a small engine
+binary that both an agent and a participant play through `rushhour-gym`. The
+`rushhour` backend drives the package's `RushHourHuman-v0` — the experiment
+program's own interface as an env: car selection on four buttons, its picture,
+its trial flow, its results columns in `info` — so the adapter is a keymap plus
+the fields to log. Nothing to install beyond `requirements.txt`: on first use the
+package downloads the engine of its matching release into
+`~/.cache/rushhour-gym/` (checksum-verified; Linux x86-64, macOS arm64, Windows
+x86-64). On a machine without network, run a config once while online or copy
+that directory; `RUSHHOUR_ENV_BIN` names a binary of your own.
 
 ```bash
-# 5 minutes of randomly drawn easy puzzles (the per-game config; auto-advances on solve)
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__easy.json
-
-# The full session of the Rush-Hour program: instructions, then the 12 easiest
-# puzzles of the library in order, each with a self-paced "press a key" screen,
-# a blank interval, the board, and a "PUZZLE SOLVED!" hold
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour_complete.json
+python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
+python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour_complete.json   # the program's session: 12 puzzles, easiest first, self-paced
 ```
 
-**Controls** — the four-button response-box scheme, which Rush-Hour's own
-keyboard defaults carry on the arrow keys (`1 2 3 4` are what an MRI box
-sends):
-
-| Action | Keys |
-|---|---|
-| choose the previous / next car | `←` / `→`, or `3` / `4` |
-| slide the selected car left (or up, if it is vertical) | `↑`, `1` or `,` |
-| slide it right (or down) | `↓`, `2` or `.` |
-
-One car is always selected — outlined in white, with a white arrow at each end
-it can still move towards (from the engine's legality mask, so a refused move
-never looks like a dropped keypress). Selection skips cars that cannot move at
-all (`"movable_only": true`, Rush-Hour's default); set it to `false` for a
-task in which noticing the stuck cars is part of the search, and keep it the
-same across sessions you compare. A spatial scheme (choose the car above /
-below / left / right) exists too: bind keys to meta-actions `0`–`3` in `keys`.
-
-**Game-phase fields** (all optional):
-
-| field | meaning |
-|---|---|
-| `game` | `RushHour-v0` (whole library), `RushHour-Easy-v0` (≤ 12 moves), `RushHourFixed-v0` |
-| `puzzle_order: "library"` | episode *k* plays library puzzle *k* (easiest first, what Rush-Hour's `-n` presents); or `puzzle_indices: [...]` for an explicit list. Without either, puzzles are drawn at random from the env's pool, seeded |
-| `paced` | Rush-Hour's trial flow — ready screen, blank ITI, solved hold (default: on when a puzzle sequence is given) |
-| `iti`, `solved_feedback` | seconds of blank before the board (0.8) and of "PUZZLE SOLVED!" after (1.2) |
-| `movable_only` | skip stuck cars when choosing (default `true`) |
-| `binary`, `max_episode_steps` | engine binary path; step cap (default effectively none — the env ids' own limits would truncate a participant) |
-
-Use `"turn_based": true` (the configs do): the block advances only on a
-keypress. Since a turn-based block only steps on keydown, a high `fps` costs
-nothing and sets the keypress timestamp resolution (`rushhour_complete.json`
-uses 60, i.e. ~17 ms).
-
-**What is logged.** Besides the standard per-frame arrays, the block's `.npz`
-carries the columns of Rush-Hour's own results file, one row per keypress:
-`event` (`trial_start`, `start`, `select`, `move`, `blocked`, `trial_end`,
-`ignored`), `trial`, `puzzle`, `puzzle_index`, `min_moves`, `car`,
-`orientation`, `from_row`/`from_col`/`to_row`/`to_col`, `n_slides`, `solved`,
-`t_ms` (since the board appeared) and `trial_ms` (at `trial_end`); plus
-`env_action` (the engine's `Discrete` index, `-1` for a select), `selected`,
-`moved`, `illegal`. A block is reconstructable by seed + `env_action` replay.
-
-> Not reproduced from the Go program: it stamps every keypress and display
-> flip on SDL's monotonic clock and runs exclusive fullscreen; here a key is
-> timestamped when the loop processes it (within `1/fps`), and flips are not
-> recorded. Below the fMRI haemodynamic floor; not MEG-grade. Nor the solved
-> sound, nor mouse play.
+Controls, phase fields and the logged columns are documented in the configs'
+`_note`s and in the package's README ("A person at the board").
 
 ## Design: the experiment loop never knows the engine
 
