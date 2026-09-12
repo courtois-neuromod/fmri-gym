@@ -1,107 +1,91 @@
-"""SuperTuxKart adapter (pystk2) -- the DBP "sports/racing" pick.
+"""SuperTuxKart adapter (pystk2-gymnasium) -- the DBP "sports/racing" pick.
 
-pystk2-gymnasium exposes only *state features* (no pixel render), so we drive
-the underlying pystk2 engine directly: it renders the 3D scene to an image
-(`race.render_data[0].image`) which we display, and we translate held keys into
-a pystk2.Action (steer / accelerate / brake / drift / fire / nitro).
+Uses the `pystk2-gymnasium` package (bpiwowar/pystk2-gymnasium) for the whole
+race lifecycle: it registers `supertuxkart/full-v0`, a Gymnasium env whose Dict
+action exposes acceleration / steering / brake / drift / fire / nitro, and it
+handles reset/step/reward. We only translate held keys into that action.
 
-IMPORTANT: SuperTuxKart's renderer (Irrlicht) needs a real GL context -- it does
-NOT work under SDL_VIDEODRIVER=dummy. Run it on a real display (or Xvfb with
-GLX). The fMRI presentation machine has a display, so this is fine there;
-headless CI without GL cannot render it.
+pystk2-gymnasium has no rgb_array render mode (its ``render()`` is a no-op; its
+only render mode, "human", opens SuperTuxKart's OWN window, which we do NOT want
+-- it sits over our display and steals keyboard focus). So we pass an offscreen
+``GraphicsConfig`` (no window) and read the frame straight off the in-process
+race the env keeps (``env.unwrapped._stk.race.render_data[0].image``). That needs
+``use_subprocess=False`` so the race lives in this process (not a worker), and a
+real GL context -- SuperTuxKart's renderer does NOT work under
+SDL_VIDEODRIVER=dummy. The fMRI presentation machine has a display, so this is
+fine there; headless CI without GL cannot render it.
 
 Controls: LEFT/RIGHT steer, UP accelerate, DOWN brake, SPACE fire item,
-Z drift, X nitro. Reward = distance progress per step; kart finish -> done.
+Z drift, X nitro. Reward + termination come from the gym env (progress / place /
+finishing the race).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
+import gymnasium as gym
 
 from .keyspec import PassthroughKeySpec
 from .base import EnvAdapter, FrameState
-
-if TYPE_CHECKING:
-    import pystk2
-
-_STARTED: dict[str, bool] = {"init": False}
 
 
 class SuperTuxKartAdapter(EnvAdapter):
     name: str = "supertuxkart"
 
-    def _make(self, spec: dict) -> pystk2.Race:
+    def _make(self, spec: dict) -> gym.Env:
         import pystk2
-        self._pystk2 = pystk2
-        w = int(spec.get("width", 600))
-        h = int(spec.get("height", 400))
-        # pystk2 must be init'd once per process (re-init crashes the engine).
-        if not _STARTED["init"]:
-            gc = pystk2.GraphicsConfig.sd()
-            gc.screen_width, gc.screen_height = w, h
-            pystk2.init(gc)
-            _STARTED["init"] = True
-        cfg = pystk2.RaceConfig(num_kart=int(spec.get("num_kart", 3)),
-                                laps=int(spec.get("laps", 3)))
-        if spec.get("track"):
-            cfg.track = spec["track"]
-        cfg.players[0].controller = pystk2.PlayerConfig.Controller.PLAYER_CONTROL
-        race = pystk2.Race(cfg)
-        race.start()
-        race.step()  # first frame
-        self._ws = pystk2.WorldState()
-        self._prev_dist = 0.0
-        return race
+        import pystk2_gymnasium  # noqa: F401  (registers supertuxkart/* env ids)
+        from pystk2_gymnasium import AgentSpec
+
+        # Render OFFSCREEN into an in-process buffer we read in render(): a plain
+        # GraphicsConfig (NOT render_mode="human", which opens SuperTuxKart's own
+        # window -- that would sit on top of our display and steal keyboard focus
+        # so pygame gets no key presses). use_subprocess=False keeps the race in
+        # THIS process so render() can reach its frame. AgentSpec(use_ai=False)
+        # makes our kart player-controlled (else step() ignores the action).
+        gc = pystk2.GraphicsConfig.sd()
+        gc.screen_width = int(spec.get("width", 600))
+        gc.screen_height = int(spec.get("height", 400))
+        return gym.make(
+            "supertuxkart/full-v0",
+            render_mode=None,
+            use_subprocess=False,
+            graphics_config=gc,
+            agent=AgentSpec(use_ai=False),
+            num_kart=int(spec.get("num_kart", 3)),
+            laps=int(spec.get("laps", 3)),
+            difficulty=int(spec.get("difficulty", 2)),
+            track=spec.get("track"),
+        )
 
     def _keyspec(self) -> PassthroughKeySpec:
-        # Actions are assembled from the held-key set in step(); the combos here
-        # just declare which keys are meaningful (resolve returns the held set).
+        # The action is assembled from the held-key set in step(); the combos
+        # here just declare which keys are meaningful (resolve returns the set).
         keys = ["LEFT", "RIGHT", "UP", "DOWN", "SPACE", "Z", "X"]
         combos = {frozenset([k]): k for k in keys}
         return PassthroughKeySpec(combos=combos, noop="")
 
-    def reset(self, seed: int | None) -> tuple[Any, dict]:
-        # pystk2.Race has no reset(); restart the race for a fresh episode.
-        try:
-            self.env.restart()
-        except Exception:
-            pass
-        self.env.step()
-        self._prev_dist = 0.0
-        return None, {}
-
     def step(self, action: Any) -> tuple[Any, float, bool, bool, dict]:
-        pystk2 = self._pystk2
         held = set(action.split("+")) if isinstance(action, str) and action else \
             (set(action) if action else set())
-        a = pystk2.Action()
-        a.steer = (1.0 if "RIGHT" in held else 0.0) - (1.0 if "LEFT" in held else 0.0)
-        a.acceleration = 1.0 if "UP" in held else 0.0
-        a.brake = "DOWN" in held
-        a.fire = "SPACE" in held
-        a.drift = "Z" in held
-        a.nitro = "X" in held
-        self.env.step(a)
-        self._ws.update()
-        kart = self._ws.karts[0] if self._ws.karts else None
-        dist = float(getattr(kart, "overall_distance", 0.0)) if kart else 0.0
-        reward = dist - self._prev_dist
-        self._prev_dist = dist
-        finished = bool(getattr(kart, "finished_laps", 0) >= self.env.config.laps) if kart else False
-        return None, reward, finished, False, {"distance": dist}
+        act = {
+            "acceleration": np.array([1.0 if "UP" in held else 0.0], np.float32),
+            "steer": np.array([(1.0 if "RIGHT" in held else 0.0)
+                               - (1.0 if "LEFT" in held else 0.0)], np.float32),
+            "brake": int("DOWN" in held),
+            "fire": int("SPACE" in held),
+            "drift": int("Z" in held),
+            "nitro": int("X" in held),
+            "rescue": 0,
+        }
+        return self.env.step(act)
 
     def render(self) -> np.ndarray:
-        return np.asarray(self.env.render_data[0].image)
+        # pystk2-gymnasium exposes no pixel obs; read the in-process race's frame.
+        return np.asarray(self.env.unwrapped._stk.race.render_data[0].image)
 
-    def capture(
-        self, obs: Any, info: dict, want_blob: bool = True
-    ) -> FrameState:
-        return FrameState(blob=None, variables={"distance": (info or {}).get("distance", 0.0)})
-
-    def close(self) -> None:
-        try:
-            self.env.stop()
-        except Exception:
-            pass
+    def capture(self, obs: Any, info: dict, want_blob: bool = True) -> FrameState:
+        return FrameState(blob=None,
+                          variables={"distance": float((info or {}).get("distance", 0.0))})
