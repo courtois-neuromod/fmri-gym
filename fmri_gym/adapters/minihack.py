@@ -52,6 +52,11 @@ class MiniHackAdapter(EnvAdapter):
         return SingleKeySpec(combos=combos, noop=0)
 
     def reset(self, seed: int | None) -> tuple[Any, dict]:
+        # Explicitly seed NetHack's core and dispersion RNGs for reproducible
+        # action replay. This avoids relying solely on Gymnasium's reset seed,
+        # whose propagation to NLE/NetHack is version-dependent.
+        if seed is not None:
+            self.env.unwrapped.seed(core=seed, disp=seed, reseed=False)
         obs, info = self.env.reset(seed=seed)
         self._last = obs
         return obs, info
