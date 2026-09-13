@@ -92,7 +92,8 @@ def _get_action(key_to_action: dict) -> tuple[object | None, bool]:
 def _wait_for_char(char: str, dummy_trigger: bool = False) -> None:
     """Block until ``char`` is typed (or briefly sleep in dummy mode).
 
-    :param char: the unicode character that unblocks the wait.
+    :param char: the unicode character that unblocks the wait, or ``"any"``
+        to accept every key (a self-paced "press any key" screen).
     :param dummy_trigger: if ``True``, sleep briefly and return without waiting.
     :raises KeyboardInterrupt: on window close or ESC.
     """
@@ -106,7 +107,7 @@ def _wait_for_char(char: str, dummy_trigger: bool = False) -> None:
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     raise KeyboardInterrupt
-                if event.unicode == char:
+                if char == "any" or event.unicode == char:
                     return
         time.sleep(0.005)
 
@@ -197,7 +198,8 @@ class Session:
         """Show on-screen text until a key press or timed duration.
 
         :param phase: message-phase config (``text`` as a string or list of
-            lines; optional ``duration`` / ``key`` / ``align``).
+            lines; optional ``duration`` / ``key`` / ``align``). ``key`` is the
+            character that dismisses the screen (default SPACE), or ``"any"``.
         :param index: phase index in the curriculum (for the manifest).
         """
         text = _join_multiline_text(phase.get("text", ""))

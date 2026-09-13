@@ -12,21 +12,34 @@ pip install -r requirements.txt
 ```
 
 `requirements.txt` already pulls in the common backends (crafter, minihack,
-vizdoom, playwright, pystk2-gymnasium, …). Two games need an extra step:
+vizdoom, playwright, pystk2-gymnasium, rushhour-gym, …). One game needs an
+extra step:
 
 ```bash
 # Baba is AI
 pip install "git+https://github.com/nacloos/baba-is-ai.git"
-
-# Rush Hour — Python package + Go engine binary
-pip install "git+https://github.com/chrplr/Rush-Hour.git#subdirectory=python"
-git clone https://github.com/chrplr/Rush-Hour vendor/rush-hour-src
-# Build the binary in place; leave it at vendor/rush-hour-src/rushhour-env
-# (the adapter looks there automatically — do not move it):
-cd vendor/rush-hour-src && go build -o rushhour-env ./cmd/rushhour-env && cd ../..
-# Optional: if you built it elsewhere, point at it with:
-#   export RUSHHOUR_ENV_BIN=/absolute/path/to/rushhour-env
 ```
+
+Rush Hour needs none: `rushhour-gym` comes from PyPI, and on first use it
+downloads the matching `rushhour-env` engine from the Rush-Hour
+GitHub release into `~/.cache/rushhour-gym/` (checksum-verified; Linux x86-64,
+macOS arm64, Windows x86-64). On an offline scanner PC, run any Rush Hour
+config once while online, or copy that cache directory over; `RUSHHOUR_ENV_BIN`
+can also point at a binary you placed yourself (from a release archive, or
+`go build -o rushhour-env ./cmd/rushhour-env` in a Rush-Hour checkout).
+
+Developing Rush-Hour and fmri-gym together? Install the package editable from
+the checkout and point at its engine, which the adapter then uses:
+
+```bash
+RH=/path/to/Rush-Hour
+pip install -e "$RH/python"
+(cd "$RH" && go build -o rushhour-env ./cmd/rushhour-env)
+export RUSHHOUR_ENV_BIN="$RH/rushhour-env"
+```
+
+(The engine's default Go build is headless — no SDL, no C toolchain — so
+`go build` needs nothing but the Go compiler.)
 
 AI GameStore uses Playwright + system Chrome by default. If you don't have
 Chrome, install the bundled Chromium instead:
@@ -75,13 +88,14 @@ python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/crafter__cra
 ### Rush Hour
 
 ```bash
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour__easy.json
+python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
+python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour_complete.json    # Rush-Hour's own session: 12 puzzles, easiest first, self-paced
 ```
 
-Needs the Go binary from §1. After the build step you should have
-`vendor/rush-hour-src/rushhour-env` in the repo — leave it there; the adapter
-auto-finds that path. If the binary lives somewhere else, set
-`export RUSHHOUR_ENV_BIN=/absolute/path/to/rushhour-env` before running.
+`rushhour_complete.json` is the Rush-Hour program's own session (ready screen
+before each puzzle, blank interval, solved hold); see its `_session_note`.
+
+The engine binary is fetched on first run (see §1); nothing to build.
 
 ### Baba is AI
 

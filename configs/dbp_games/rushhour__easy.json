@@ -1,8 +1,9 @@
 {
   "_game": "Rush Hour (puzzle: slide cars to free the red car)",
-  "_note": "Setup: (1) pip install 'git+https://github.com/chrplr/Rush-Hour.git#subdirectory=python'; (2) clone the repo to vendor/rush-hour-src and build the Go engine: `git clone https://github.com/chrplr/Rush-Hour vendor/rush-hour-src && cd vendor/rush-hour-src && go build -o rushhour-env ./cmd/rushhour-env` (the adapter auto-finds it there, or set RUSHHOUR_ENV_BIN / the phase 'binary'). Env ids: RushHour-v0, RushHour-Easy-v0, RushHourFixed-v0.",
-  "_keys_note": "Env Discrete(32) is action=slot*2+direction (0=left/up, 1=right/down); slot 0 is always the red car. Humans do not press those indices: curriculum 'keys' are the adapter's meta-actions (same as rushinput.DefaultMap) — 0..3=select up/down/left/right, 4/5=select prev/next, 6/7=move back/forward. Select does not call env.step; moves become Discrete and are logged as env_action (-1 for UI-only selects). Keep the message Controls text in sync with 'keys' by hand.",
-  "_keys_reference": "https://github.com/chrplr/Rush-Hour/blob/main/internal/rushinput/keymap.go",
+  "_note": "Setup: pip install rushhour-gym>=0.5.0 (in requirements.txt). On first use the package downloads the rushhour-env Go engine of the matching Rush-Hour release into ~/.cache/rushhour-gym/ (checksum-verified); set RUSHHOUR_ENV_BIN or the phase 'binary' field to use a binary of your own. The env is RushHourHuman-v0: the Rush-Hour program's own interface (button selection, its picture, its trial flow, its results columns in info), all in the package -- the adapter is a keymap plus the fields to log.",
+  "_keys_note": "Env action space Discrete(8) = rushinput's meta-actions: 0..3 choose the car up/down/left/right (spatial, what Rush-Hour's gamepad d-pad does), 4/5 choose the previous/next car, 6/7 slide it back (left/up) / forward (right/down). The defaults below are rushinput.DefaultMap's keyboard (rushhour_gym.human.DEFAULT_KEYS): LEFT/RIGHT and 3/4 choose, UP/DOWN and 1/2 (or , .) slide. Choosing calls no engine step; a slide becomes the engine's Discrete(32) action, logged as env_action (-1 for a choose). Keep the message Controls text in sync with 'keys' by hand.",
+  "_keys_reference": "https://github.com/chrplr/Rush-Hour/blob/main/python/src/rushhour_gym/human.py",
+  "_ergonomics_note": "White triangles on the selected car show which of its two slides are legal (from the engine action_mask), because a refused move renders identically to a dropped keypress. 'movable_only' (default true, matching Rush-Hour's -movable-only default) makes selection skip cars that cannot move at all. false is Rush-Hour's -movable-only=false: a different task, since noticing which cars are stuck becomes part of the search -- keep it the same across sessions being compared.",
   "curriculum": [
     {
       "type": "message",
@@ -14,25 +15,48 @@
         "the exit on the right.",
         "",
         "Controls:",
-        "   ARROWS     select a neighbouring car",
-        "   3 / 4      previous / next car",
-        "   1 or ,     move selected left / up",
-        "   2 or .     move selected right / down",
+        "   LEFT / RIGHT  or  3 / 4   previous / next car",
+        "   UP    or  1 or ,          slide it left, or up if vertical",
+        "   DOWN  or  2 or .          slide it right, or down if vertical",
+        "",
+        "White triangles mark the moves a car can make.",
         "",
         "(press SPACE to start)"
       ]
     },
-    {"type": "fixation", "duration": 1.0},
     {
-      "type": "game", "backend": "rushhour", "game": "RushHour-Easy-v0",
-      "keys": {
-        "UP": 0, "DOWN": 1, "LEFT": 2, "RIGHT": 3,
-        "3": 4, "4": 5,
-        "1": 6, "2": 7,
-        "COMMA": 6, "PERIOD": 7
-      },
-      "mode": "duration", "duration": 300.0, "fps": 5, "turn_based": true
+      "type": "fixation",
+      "duration": 1.0
     },
-    {"type": "fixation", "duration": 2.0}
+    {
+      "type": "game",
+      "backend": "rushhour",
+      "game": "RushHourHuman-v0",
+      "min_moves_range": [
+        0,
+        12
+      ],
+      "movable_only": true,
+      "keys": {
+        "LEFT": 4,
+        "RIGHT": 5,
+        "3": 4,
+        "4": 5,
+        "UP": 6,
+        "DOWN": 7,
+        "1": 6,
+        "2": 7,
+        "COMMA": 6,
+        "PERIOD": 7
+      },
+      "mode": "duration",
+      "duration": 300.0,
+      "fps": 5,
+      "turn_based": true
+    },
+    {
+      "type": "fixation",
+      "duration": 2.0
+    }
   ]
 }

@@ -20,7 +20,7 @@ through small pluggable **adapters**:
 | `vizdoom`     | Doom action-shooter scenarios (COOM's engine) | ViZDoom |
 | `overcooked`  | Overcooked co-op cooking (social) | overcooked_ai |
 | `baba`        | Baba Is You (rule-manipulation puzzle) | baba-is-ai |
-| `rushhour`    | Rush Hour sliding-block puzzle | rushhour_gym + Go engine |
+| `rushhour`    | Rush Hour sliding-block puzzle | `rushhour-gym` (PyPI; fetches its Go engine) |
 | `supertuxkart`| SuperTuxKart 3D racing (needs a real GL display) | pystk2 |
 
 > **All backends run in ONE env and ONE process.** Verified: a single session
@@ -48,7 +48,8 @@ pip install -r requirements.txt
 
 Atari ROMs ship with `ale-py`. For the `retro` backend you must supply and
 import game ROMs once — see [Running stable-retro games](#running-stable-retro-games).
-For the `vgdl` backend see [Running VGDL games](#running-vgdl-games).
+For the `vgdl` backend see [Running VGDL games](#running-vgdl-games);
+for Rush Hour, [Running Rush-Hour](#running-rush-hour).
 
 ## Quick start
 
@@ -116,7 +117,7 @@ the right per-game keymap/settings baked in. Coverage by class:
 | `vizdoom__` | 1 | defend_center (Doom; COOM's engine; other Vizdoom*-v1 scenarios) |
 | `overcooked__` | 1 | cramped_room (co-op cooking; other layouts) |
 | `baba__` | 1 | make_win (rule-manipulation puzzle; other ids) |
-| `rushhour__` | 1 | easy (sliding-block puzzle; needs the Go engine built) |
+| `rushhour__` | 1 | easy (sliding-block puzzle). `rushhour_complete.json` is the full self-paced session of Rush-Hour's own program, then the rest of the library: all 49 puzzles, the first 12 easiest-first and the other 37 in a fixed shuffled order, one game phase each, with ready screens and solved feedback as message phases |
 | `supertuxkart__` | 1 | race (3D racing; needs a real GL display) |
 | `retro__` | 3 | tobutobugirldx, nomolos, anguna (need ROMs imported) |
 
@@ -129,7 +130,7 @@ playwright, box2d-py, MuJoCo GL, ROM import).
 > with a `_status`/`_note` explaining why: games with no real-time pixel
 > interface — `2048` (upstream reset bug), `pathery`/`wordle` (text/placement),
 > `tile-match-gym` (display-only, `Discrete(84)` swaps → no keyboard play),
-> `mastermind` (needs Python ≥3.13), `rush-hour` (unpackaged), and heavy engines
+> `mastermind` (needs Python ≥3.13), and heavy engines
 > `coom` (ViZDoom) / `craftium` (Luanti) that need a dedicated adapter.
 
 Runtime flow: experimenter screen (**SPACE**) → "Waiting for scanner..." →
@@ -250,6 +251,31 @@ URL), `games_dir` (override the vendored dir), `headed` (show the window),
 > effective fps is lower than the emulator backends — fine for these
 > puzzle/casual games, and the framework paces to whatever it can sustain.
 
+## Running Rush-Hour
+
+[Rush-Hour](https://github.com/chrplr/Rush-Hour) is a sliding-block puzzle
+written as a psychophysics experiment in Go, with its rules in a small engine
+binary that both an agent and a participant play through `rushhour-gym`. The
+`rushhour` backend drives the package's `RushHourHuman-v0` — the experiment
+program's own interface as an env: car selection on four buttons, its picture,
+its results columns in `info` — so the adapter is a keymap plus the fields to
+log. One game phase is one puzzle (`"puzzle": "p07"`); the program's ready
+screens, blank intervals and solved feedback are `message` phases the
+curriculum lists around each puzzle, so every puzzle is its own block in the
+manifest and its own `.npz`. Nothing to install beyond `requirements.txt`: on first use the
+package downloads the engine of its matching release into
+`~/.cache/rushhour-gym/` (checksum-verified; Linux x86-64, macOS arm64, Windows
+x86-64). On a machine without network, run a config once while online or copy
+that directory; `RUSHHOUR_ENV_BIN` names a binary of your own.
+
+```bash
+python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
+python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour_complete.json   # the program's session then the rest of the library: 49 puzzles, one block each
+```
+
+Controls, phase fields and the logged columns are documented in the configs'
+`_note`s and in the package's README ("A person at the board").
+
 ## Design: the experiment loop never knows the engine
 
 ```
@@ -267,6 +293,7 @@ fmri_gym/
     minihack.py     # pixel obs + compass keymap; blstats/glyphs/message
     nethack.py      # base NLE: TTY grid -> RGB; vi-key movement; blstats
     aigamestore.py  # p5.js browser games via Playwright: canvas->RGB, getGameState
+    rushhour.py     # Go engine via rushhour-gym; select+slide UI, rushui look, Rush-Hour's log columns; one puzzle per block
 fmri_play.py        # CLI entry point
 configs/            # example curricula
 vendor/aigamestore/ # the 10 public AI GameStore games (p5.js/HTML/JS)

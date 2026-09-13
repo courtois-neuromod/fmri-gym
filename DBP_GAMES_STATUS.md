@@ -24,7 +24,7 @@ Legend: ✅ verified · 🟡 runs, display-only · ⚠️ needs assets · ❌ do
 | Pathery | `pathery` | gym | ❌ text-only | ANSI render + `MultiDiscrete` placement → not real-time visual |
 | Wordle | `wordle` | gym | ❌ text-only | `Text(5)` typed-word action + text render |
 | Mastermind | `mastermind` | gym | ❌ can't install | requires Python ≥3.13 (env is 3.11) |
-| Rush Hour | `rush-hour` | gym | ❌ not packaged | repo has no `setup.py`/`pyproject` |
+| Rush Hour | `rush-hour` | gym | ✅ `rushhour` backend | `pip install rushhour-gym`; engine auto-fetched; selection UI in the adapter |
 | COOM | `coom` | gym | ⏸️ deferred | ViZDoom; own env factory → needs a custom adapter |
 | Craftium | `craftium` | gym | ⏸️ deferred | needs the Luanti/Minetest engine built |
 
@@ -97,10 +97,12 @@ game → needs a bespoke text input+render.
 `MastermindGymnasiumEnvironment` requires **Python ≥3.13**; the env is 3.11, so
 pip refuses. Also turn-based (would need custom input). Revisit in a py3.13 env.
 
-### ❌ rush-hour (gym) — not packaged
-`chrplr/Rush-Hour` has no `setup.py`/`pyproject.toml` → not pip-installable.
-Sliding-block puzzle; would need vendoring + a custom adapter and selection
-input.
+### ✅ rush-hour (gym) — `rushhour` backend
+`chrplr/Rush-Hour` ships `rushhour-gym` on PyPI; the Go engine is fetched from
+the matching GitHub release on first use. The adapter (`fmri_gym/adapters/
+rushhour.py`) adds the button-selection UI of the experiment program (select a
+car, slide it), draws the legal slides, and `rushhour_complete.json` presents
+that program's whole self-paced session.
 
 ### ⏸️ coom (gym) — deferred
 `TTomilin/COOM`, a ViZDoom-based continual-RL suite with its **own env factory**
