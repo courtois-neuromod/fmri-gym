@@ -28,8 +28,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import numpy as np
-
 from .base import EnvAdapter, FrameState
 from .keyspec import SingleKeySpec
 
@@ -65,9 +63,6 @@ class RushHourAdapter(EnvAdapter):
         from rushhour_gym.human import DEFAULT_KEYS, NOOP
         combos = {frozenset([k]): v for k, v in DEFAULT_KEYS.items()}
         return SingleKeySpec(combos=combos, noop=NOOP)
-
-    def render(self) -> np.ndarray:
-        return self.env.render()
 
     def capture(
         self, obs: Any, info: dict, want_blob: bool = True
