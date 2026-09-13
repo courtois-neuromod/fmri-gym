@@ -1,9 +1,17 @@
 """Streaming PCM output via a PortAudio callback (sounddevice).
 
-The caller pushes numpy audio blocks on one thread; PortAudio pulls them
-in a realtime callback. Delivery is continuous, so a block may span
-several callback invocations when its length differs from the host
-buffer size.
+:meth:`play` starts the stream; PortAudio then calls :meth:`callback` on
+its own realtime thread (not from the caller). Each callback fills one
+host buffer (``outdata``) with the next slice of samples and returns
+immediately — it does not play a whole clip in one go. Keep the callback
+short: if it blocks or the queue runs dry, the buffer underruns and you
+hear silence or clicks.
+
+The caller pushes numpy blocks with :meth:`put` on another thread; the
+callback pulls from the queue. A queued block is often longer or shorter
+than one host buffer, so the callback's inner loop splices across blocks
+until that single slot is full, then returns while the caller keeps
+running.
 """
 
 from __future__ import annotations
