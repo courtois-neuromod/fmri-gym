@@ -5,31 +5,11 @@ one-liner. For design notes, adapters, and logging details see [README.md](READM
 
 ## 1. Install
 
-This checkout uses **uv** with a `.venv/` in the repo root. Run every install
-command from the repo root: `uv pip` finds `./.venv` on its own, so you do not
-have to activate anything first.
-
-```bash
-uv venv --python 3.11           # creates .venv/
-uv pip install -r requirements.txt
-```
-
-To run the scripts, either activate the env (`source .venv/bin/activate`) or
-call the interpreter directly (`.venv/bin/python fmri_play.py ...`). Note that a
-uv-created venv has no `pip` inside it — use `uv pip install ...`, not
-`.venv/bin/pip`.
-
-<details>
-<summary>conda instead of uv</summary>
-
 ```bash
 conda create -n fmri-gym python=3.11
 conda activate fmri-gym
 pip install -r requirements.txt
 ```
-
-Everything below works the same; just read `uv pip install` as `pip install`.
-</details>
 
 `requirements.txt` already pulls in the common backends (crafter, minihack,
 vizdoom, playwright, pystk2-gymnasium, rushhour-gym, …). One game needs an
@@ -37,7 +17,7 @@ extra step:
 
 ```bash
 # Baba is AI
-uv pip install "git+https://github.com/nacloos/baba-is-ai.git"
+pip install "git+https://github.com/nacloos/baba-is-ai.git"
 ```
 
 Rush Hour needs none: `rushhour-gym` comes from PyPI, and on first use it
@@ -53,7 +33,7 @@ the checkout and point at its engine, which the adapter then uses:
 
 ```bash
 RH=/path/to/Rush-Hour
-uv pip install -e "$RH/python"
+pip install -e "$RH/python"
 (cd "$RH" && go build -o rushhour-env ./cmd/rushhour-env)
 export RUSHHOUR_ENV_BIN="$RH/rushhour-env"
 ```
