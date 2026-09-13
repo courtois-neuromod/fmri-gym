@@ -18,7 +18,7 @@ pillow                 # `aigamestore` backend: PNG canvas screenshot -> RGB fra
 vizdoom                # `vizdoom` backend (Doom action-shooter; COOM's engine)
 overcooked-ai          # `overcooked` backend (co-op cooking, social)
 pystk2-gymnasium       # `supertuxkart` backend (3D racing; NEEDS a real GL display)
-rushhour-gym>=0.5.0    # `rushhour` backend (sliding-block puzzle; fetches its Go engine on first use)
+rushhour-gym>=0.6.0    # `rushhour` backend (sliding-block puzzle; fetches its Go engine on first use)
 
 # From non-PyPI sources / needing a toolchain (see each config's _note):
 #   baba       -> pip install "git+https://github.com/nacloos/baba-is-ai.git"

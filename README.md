@@ -117,7 +117,7 @@ the right per-game keymap/settings baked in. Coverage by class:
 | `vizdoom__` | 1 | defend_center (Doom; COOM's engine; other Vizdoom*-v1 scenarios) |
 | `overcooked__` | 1 | cramped_room (co-op cooking; other layouts) |
 | `baba__` | 1 | make_win (rule-manipulation puzzle; other ids) |
-| `rushhour__` | 1 | easy (sliding-block puzzle). `rushhour_complete.json` is the full self-paced session of Rush-Hour's own program: 12 puzzles easiest-first, ready screens, solved hold |
+| `rushhour__` | 1 | easy (sliding-block puzzle). `rushhour_complete.json` is the full self-paced session of Rush-Hour's own program, then the rest of the library: all 49 puzzles, the first 12 easiest-first and the other 37 in a fixed shuffled order, one game phase each, with ready screens and solved feedback as message phases |
 | `supertuxkart__` | 1 | race (3D racing; needs a real GL display) |
 | `retro__` | 3 | tobutobugirldx, nomolos, anguna (need ROMs imported) |
 
@@ -258,8 +258,11 @@ written as a psychophysics experiment in Go, with its rules in a small engine
 binary that both an agent and a participant play through `rushhour-gym`. The
 `rushhour` backend drives the package's `RushHourHuman-v0` — the experiment
 program's own interface as an env: car selection on four buttons, its picture,
-its trial flow, its results columns in `info` — so the adapter is a keymap plus
-the fields to log. Nothing to install beyond `requirements.txt`: on first use the
+its results columns in `info` — so the adapter is a keymap plus the fields to
+log. One game phase is one puzzle (`"puzzle": "p07"`); the program's ready
+screens, blank intervals and solved feedback are `message` phases the
+curriculum lists around each puzzle, so every puzzle is its own block in the
+manifest and its own `.npz`. Nothing to install beyond `requirements.txt`: on first use the
 package downloads the engine of its matching release into
 `~/.cache/rushhour-gym/` (checksum-verified; Linux x86-64, macOS arm64, Windows
 x86-64). On a machine without network, run a config once while online or copy
@@ -267,7 +270,7 @@ that directory; `RUSHHOUR_ENV_BIN` names a binary of your own.
 
 ```bash
 python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour_complete.json   # the program's session: 12 puzzles, easiest first, self-paced
+python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour_complete.json   # the program's session then the rest of the library: 49 puzzles, one block each
 ```
 
 Controls, phase fields and the logged columns are documented in the configs'
@@ -290,7 +293,7 @@ fmri_gym/
     minihack.py     # pixel obs + compass keymap; blstats/glyphs/message
     nethack.py      # base NLE: TTY grid -> RGB; vi-key movement; blstats
     aigamestore.py  # p5.js browser games via Playwright: canvas->RGB, getGameState
-    rushhour.py     # Go engine via rushhour-gym; select+slide UI, rushui look, Rush-Hour's trial flow and log columns
+    rushhour.py     # Go engine via rushhour-gym; select+slide UI, rushui look, Rush-Hour's log columns; one puzzle per block
 fmri_play.py        # CLI entry point
 configs/            # example curricula
 vendor/aigamestore/ # the 10 public AI GameStore games (p5.js/HTML/JS)
