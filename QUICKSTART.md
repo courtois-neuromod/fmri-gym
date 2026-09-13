@@ -89,10 +89,10 @@ python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/crafter__cra
 
 ```bash
 python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour_complete.json    # Rush-Hour's own session: 12 puzzles, easiest first, self-paced
+python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour__complete.json    # Rush-Hour's own session: 12 puzzles, easiest first, self-paced
 ```
 
-`rushhour_complete.json` is the Rush-Hour program's own session (ready screen
+`rushhour__complete.json` is the Rush-Hour program's own session (ready screen
 before each puzzle, blank interval, solved hold); see its `_session_note`.
 
 The engine binary is fetched on first run (see §1); nothing to build.

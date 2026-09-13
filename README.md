@@ -117,7 +117,7 @@ the right per-game keymap/settings baked in. Coverage by class:
 | `vizdoom__` | 1 | defend_center (Doom; COOM's engine; other Vizdoom*-v1 scenarios) |
 | `overcooked__` | 1 | cramped_room (co-op cooking; other layouts) |
 | `baba__` | 1 | make_win (rule-manipulation puzzle; other ids) |
-| `rushhour__` | 1 | easy (sliding-block puzzle). `rushhour_complete.json` is the full self-paced session of Rush-Hour's own program, then the rest of the library: all 49 puzzles, the first 12 easiest-first and the other 37 in a fixed shuffled order, one game phase each, with ready screens and solved feedback as message phases |
+| `rushhour__` | 1 | easy (sliding-block puzzle). `rushhour__complete.json` is the full self-paced session of Rush-Hour's own program, then the rest of the library: all 49 puzzles, the first 12 easiest-first and the other 37 in a fixed shuffled order, one game phase each, with ready screens and solved feedback as message phases |
 | `supertuxkart__` | 1 | race (3D racing; needs a real GL display) |
 | `retro__` | 3 | tobutobugirldx, nomolos, anguna (need ROMs imported) |
 
@@ -270,7 +270,7 @@ that directory; `RUSHHOUR_ENV_BIN` names a binary of your own.
 
 ```bash
 python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour_complete.json   # the program's session then the rest of the library: 49 puzzles, one block each
+python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__complete.json   # the program's session then the rest of the library: 49 puzzles, one block each
 ```
 
 Controls, phase fields and the logged columns are documented in the configs'

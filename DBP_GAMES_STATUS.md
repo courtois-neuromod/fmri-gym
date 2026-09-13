@@ -101,7 +101,7 @@ pip refuses. Also turn-based (would need custom input). Revisit in a py3.13 env.
 `chrplr/Rush-Hour` ships `rushhour-gym` on PyPI; the Go engine is fetched from
 the matching GitHub release on first use. The adapter (`fmri_gym/adapters/
 rushhour.py`) adds the button-selection UI of the experiment program (select a
-car, slide it), draws the legal slides, and `rushhour_complete.json` presents
+car, slide it), draws the legal slides, and `rushhour__complete.json` presents
 that program's whole self-paced session.
 
 ### ⏸️ coom (gym) — deferred
