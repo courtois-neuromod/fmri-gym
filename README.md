@@ -43,6 +43,19 @@ conda activate fmri-gym
 pip install -r requirements.txt
 ```
 
+The project is also a standard `pyproject.toml` package with **one extra per
+backend** (`ale`, `retro`, `vizdoom`, `minihack`, `rushhour`, …), a `dbp` extra
+for the nine DBP picks, and `all`. Use whichever tool you prefer:
+
+```bash
+pip install -e ".[dbp]"            # any venv / conda env; add extras as needed
+uv sync --extra dbp                # uv: creates .venv/ from the committed uv.lock
+uv run fmri-play --subject sub-01 --dummy-trigger     # `fmri-play` == fmri_play.py
+```
+
+`uv.lock` pins the exact versions a session ran with; `uv lock --upgrade`
+refreshes it deliberately.
+
 > If your default pip index is a private registry, add
 > `--index-url https://pypi.org/simple`.
 

@@ -11,6 +11,13 @@ conda activate fmri-gym
 pip install -r requirements.txt
 ```
 
+or, with the package's own extras (any tool; `dbp` = the nine DBP games):
+
+```bash
+pip install -e ".[dbp]"     # in whatever env you like
+uv sync --extra dbp         # or: uv creates .venv/ from uv.lock, then `uv run fmri-play ...`
+```
+
 `requirements.txt` already pulls in the common backends (crafter, minihack,
 vizdoom, playwright, pystk2-gymnasium, rushhour-gym, …). One game needs an
 extra step:
