@@ -52,6 +52,14 @@ class Logger:
         """
         self.manifest["phases"].append(entry)
 
+    def set_extra(self, key: str, value: Any) -> None:
+        """Store a session-level entry in the manifest (e.g. trigger settings).
+
+        :param key: top-level manifest key.
+        :param value: JSON-serializable value.
+        """
+        self.manifest[key] = value
+
     def save_game_block(
         self,
         block_index: int,
@@ -91,6 +99,10 @@ class Logger:
             backend=backend,
             game=game,
         )
+        # Per-frame marker code sent to the recording device (0 = none);
+        # present only when a marker backend is active.
+        if frames.get("marker"):
+            arrays["marker"] = np.asarray(frames["marker"], dtype=np.int16)
         # Stack every named variable the adapter surfaced (ram, obs, ...).
         for key, series in frames["variables"].items():
             try:

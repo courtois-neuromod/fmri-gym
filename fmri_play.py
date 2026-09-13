@@ -18,9 +18,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
 
 from fmri_gym import Audio, Display, Session
+from fmri_gym.triggers import TriggerError
 
 
 def build_demo_curriculum() -> list[dict]:
@@ -57,10 +59,20 @@ def build_demo_curriculum() -> list[dict]:
     ]
 
 
-def load_curriculum(path: str) -> list[dict]:
+def load_config(path: str) -> dict:
+    """Load a config file: a bare curriculum list, or a dict with sections.
+
+    The dict form carries ``"curriculum"`` plus optional ``"triggers"`` (sync +
+    markers; see :mod:`fmri_gym.triggers`). ``_``-prefixed keys are notes.
+
+    :param path: JSON file path.
+    :return: a dict with at least ``"curriculum"``.
+    """
     with open(path) as f:
         data = json.load(f)
-    return data["curriculum"] if isinstance(data, dict) else data
+    if isinstance(data, dict):
+        return data
+    return {"curriculum": data}
 
 
 def main() -> None:
@@ -77,8 +89,9 @@ def main() -> None:
                    help="path to the language_and_experience checkout (vgdl backend)")
     args = p.parse_args()
 
-    curriculum = (load_curriculum(args.curriculum) if args.curriculum
-                  else build_demo_curriculum())
+    config = (load_config(args.curriculum) if args.curriculum
+              else {"curriculum": build_demo_curriculum()})
+    curriculum = config["curriculum"]
     w, h = (int(x) for x in args.size.lower().split("x"))
     outdir = args.outdir or os.path.join(
         "data", f"{args.subject}_{time.strftime('%Y%m%d-%H%M%S')}")
@@ -96,8 +109,15 @@ def main() -> None:
 
     display = Display(size=(w, h), fullscreen=args.fullscreen)
     audio = Audio()
-    session = Session(args.subject, curriculum, display, outdir,
-                      audio=audio, dummy_trigger=args.dummy_trigger)
+    try:
+        session = Session(args.subject, curriculum, display, outdir,
+                          audio=audio, dummy_trigger=args.dummy_trigger,
+                          triggers=config.get("triggers"))
+    except (TriggerError, ValueError) as exc:
+        # A bad triggers section or an unopenable marker port: stop here, at
+        # the desk, with the reason -- not mid-session with a participant.
+        display.close()
+        sys.exit(f"error: {exc}")
     try:
         session.run()
     finally:

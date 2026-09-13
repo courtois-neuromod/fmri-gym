@@ -291,6 +291,7 @@ fmri_gym/
   session.py        # trigger, clock, curriculum loop, phases  — 100% engine-agnostic
   display.py        # pygame: fixed window, aspect-fit frame, fixation, text, survey
   logging.py        # manifest.json + one compressed .npz per game block
+  triggers.py       # run-start sync (wait/send/none) + MEG/EEG marker codes over lsl/serial/parallel
   adapters/
     base.py         # EnvAdapter + KeySpec flavors + FrameState (the seam)
     ale.py          # clone_state, getRAM, lossless indexed pixels
@@ -410,6 +411,40 @@ gym.make("ALE/Pong-v5").unwrapped.get_action_meanings()
 `configs/dbp_games/atari__pong.json` and the built-in demo both use this mapping.
 CartPole similarly uses `{"LEFT": 0, "RIGHT": 1}`.
 
+## Triggers: fMRI vs MEG/EEG
+
+By default a session waits for the scanner's `=` key and sends nothing (fMRI).
+For MEG/EEG add a `"triggers"` section next to `"curriculum"` (full example:
+`configs/demo_meg.json`):
+
+```jsonc
+"triggers": {
+  "sync":    {"mode": "send", "delay": 0.0},
+  "markers": {"backend": "serial", "port": "/dev/ttyUSB0"}
+}
+```
+
+| `sync.mode` | after the experimenter's SPACE… |
+|---|---|
+| `wait` (default) | wait for `key` (default `"="`) from the trigger box, then start |
+| `send` | send the `scanner_start` code on the marker line, wait `delay` s, then start |
+| `none` | start immediately |
+
+`markers.backend`: `null` (default), `lsl`, `serial` or `parallel` — `pip
+install pylsl` / `pyserial` / `pyparallel`; `port` for serial/parallel,
+`lsl_stream_name` for LSL. A backend that cannot be opened stops the run
+before the experimenter screen, with the reason and the fix.
+
+What is sent: `task_start` when the clock anchors, `episode_start` at each
+reset, one code per frame (`"frame_every": N` to thin, `"on_frame": false` to
+drop), `task_stop` at the end. Codes never share bits, so two markers on the
+same sample still decode: frames cycle 1–7 in the low 3 bits, `task_start`=8,
+`task_stop`=16, `episode_start`=32, `scanner_start`=64, and a lifecycle code
+is OR'd with the current frame code (all under `"codes"`; overlaps are
+refused). Every value sent is logged: per frame as `marker` in the block
+`.npz`, lifecycle events with their `session_time` under `triggers` in
+`manifest.json`.
+
 ## Output & data format
 
 Each session writes `data/<subject>_<timestamp>/`:
@@ -498,9 +533,9 @@ resolving data dirs relative to `__file__`. Result: VGDL runs under gymnasium
 - [ ] Finish the **old-`gym` / shimmy** path against a real game (Sokoban,
       chess) — either port its source (VGDL recipe above) or run via shimmy in a
       `numpy<2` env; code path exists but is untested end-to-end.
-- [ ] **Photodiode sync square** and **LSL / parallel-port markers** for
-      MEG/EEG-grade timing; fMRI's slow HRF makes the `=`-anchored software
-      clock adequate.
+- [x] **LSL / serial / parallel-port markers** and a send-mode start signal
+      for MEG/EEG (`"triggers"` section) -- done.
+- [ ] **Photodiode sync square** for display-latency measurement.
 - [ ] **retro `.bk2` movie logging** as an alternative to per-frame states
       (frame-exact, tiny).
 - [ ] Per-subject deterministic curriculum generation; multi-run structure with

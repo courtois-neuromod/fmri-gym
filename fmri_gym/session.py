@@ -5,6 +5,10 @@ clock anchoring, the curriculum of phases (fixation / message / game / survey),
 inter-block intervals, timing/pacing, and logging. All engine-specific access
 goes through an EnvAdapter, so this file never imports ale_py / stable_retro
 and never touches env.unwrapped.
+
+Recording-device concerns (waiting for or sending the scanner start, marker
+codes for MEG/EEG) go through :mod:`fmri_gym.triggers`; with no ``triggers``
+config the loop behaves as the fMRI default and sends nothing.
 """
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ from __future__ import annotations
 import sys
 import time
 from collections import defaultdict
+from dataclasses import asdict
 from typing import TYPE_CHECKING, Union
 
 import pygame
@@ -21,6 +26,7 @@ from .audio import Audio
 from .display import Display
 from .keys import held_key_names, key_name
 from .logging import Logger
+from .triggers import Markers, SyncSettings, TriggerError
 
 if TYPE_CHECKING:
     from .adapters.base import EnvAdapter
@@ -147,6 +153,7 @@ class Session:
         outdir: str,
         audio: Audio | None = None,
         dummy_trigger: bool = False,
+        triggers: dict | None = None,
     ) -> None:
         """Set up clock, logger, and phase dispatch for one subject.
 
@@ -157,6 +164,12 @@ class Session:
         :param audio: shared audio output used by all phases; one is created if
             omitted, and stays silent unless an adapter returns sound.
         :param dummy_trigger: if ``True``, skip real experimenter/scanner waits.
+        :param triggers: optional ``triggers`` config section (``sync`` and
+            ``markers``; see :mod:`fmri_gym.triggers`). ``None`` = fMRI
+            default: wait for ``=``, send no markers.
+        :raises TriggerError: if a marker backend cannot be opened, or
+            ``sync.mode`` is ``send`` with no backend to send on.
+        :raises ValueError: on an invalid ``triggers`` section.
         """
         self.subject = subject
         self.curriculum = curriculum
@@ -166,22 +179,36 @@ class Session:
         self.clock = Clock()
         self.logger = Logger(outdir, subject, curriculum, self.clock)
         self.outdir = outdir
+        triggers = triggers or {}
+        self.sync = SyncSettings.from_dict(triggers.get("sync"))
+        self.markers = Markers.from_config(triggers.get("markers"), self.clock)
+        if self.sync.mode == "send" and not self.markers.enabled:
+            raise TriggerError('triggers: sync.mode "send" sends scanner_start on the marker '
+                               'line, so triggers.markers.backend must not be "null"')
 
     def _trigger(self) -> None:
-        """Wait for experimenter ready + scanner trigger, then start the clock.
+        """Wait for experimenter ready, sync with the scanner, start the clock.
 
-        Draws readiness / waiting screens, then calls :meth:`Clock.trigger` and
-        records the trigger time on the logger.
+        Draws the readiness screen, then either waits for the trigger key,
+        sends the start code (``sync.mode``), or neither; then calls
+        :meth:`Clock.trigger`, records the trigger time on the logger and
+        sends ``task_start``.
         """
         self.display.draw_text(
             "Please keep your head as still as possible.\n\n"
             "(experimenter: press SPACE when ready)")
         _wait_for_char(EXPERIMENTER_KEY, dummy_trigger=self.dummy_trigger)
-        self.display.draw_text("Waiting for scanner...")
-        _wait_for_char(TRIGGER_KEY, dummy_trigger=self.dummy_trigger)
+        if self.sync.mode == "wait":
+            self.display.draw_text("Waiting for scanner...")
+            _wait_for_char(self.sync.key, dummy_trigger=self.dummy_trigger)
+        elif self.sync.mode == "send":
+            self.display.draw_text("Starting the recording...")
+            self.markers.lifecycle("scanner_start")
+            _wait_for_duration(self.sync.delay)
 
         self.clock.trigger()
         self.logger.set_trigger_time()
+        self.markers.lifecycle("task_start")
 
     def _fixation(self, phase: dict, index: int) -> None:
         """Show a fixation cross for ``phase["duration"]`` seconds.
@@ -294,6 +321,7 @@ class Session:
         obs, info = adapter.reset(seed)
         self.display.draw_frame(adapter.render())
         self.audio.play(adapter.sound())
+        self.markers.episode_start()
 
         ## Loop over frames within episode
         while not (terminated or truncated) and time.perf_counter() < block_end:
@@ -316,6 +344,7 @@ class Session:
                 action = adapter.keyspec.resolve(held_key_names())
 
             obs, reward, terminated, truncated, info = adapter.step(action)
+            marker = self.markers.frame()
             # Anchor a full savestate at episode start and every stride.
             save_blob = (ep_frame % state_stride == 0)
             ep_frame += 1
@@ -333,6 +362,8 @@ class Session:
             frames["session_time"].append(self.clock.session_time())
             frames["wall_time"].append(self.clock.wall_time())
             frames["state_blob"].append(fs.blob)
+            if self.markers.enabled:
+                frames["marker"].append(marker)
             for k, v in fs.variables.items():
                 frames["variables"][k].append(v)
 
@@ -405,6 +436,7 @@ class Session:
             if mode == "episode" and episode_id >= n_episodes:
                 break
 
+        self.markers.block_end()
         extra = getattr(adapter, "block_extra", lambda: None)()
         adapter.close()
         # Some gym envs (classic-control) call pygame.display.quit() on close(),
@@ -445,6 +477,11 @@ class Session:
         except KeyboardInterrupt:
             print("Interrupted -- saving partial data.", file=sys.stderr)
         finally:
+            if self.clock.t0_perf is not None:
+                self.markers.lifecycle("task_stop")
+            self.logger.set_extra("triggers", {"sync": asdict(self.sync),
+                                               "markers": self.markers.describe()})
+            self.markers.close()
             manifest_path = self.logger.save_manifest()
             print(f"Saved session to: {self.outdir}")
             print(f"Manifest: {manifest_path}")
