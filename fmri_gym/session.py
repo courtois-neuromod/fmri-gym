@@ -303,12 +303,6 @@ class Session:
                 if user_quit:
                     return True
                 if action is None:
-                    # An adapter that opts in gets redrawn on idle frames too,
-                    # so it can show time-driven screens (a blank inter-trial
-                    # interval, a solved hold) and self-paced rest screens
-                    # without a keypress to trigger the draw. Nothing is logged.
-                    if getattr(adapter, "idle_redraw", False):
-                        self.display.draw_frame(adapter.render())
                     continue                    # no press -> don't step
             else:
                 if _check_quit():
