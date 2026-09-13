@@ -1,3 +1,8 @@
+# Public PyPI, spelled out: a private mirror inherited from ~/.pip/pip.conf
+# resolves these names to whatever it happens to carry, and a backend pinned
+# below can silently stay at an older version that no longer works.
+--index-url https://pypi.org/simple
+
 # Core (engine-agnostic)
 gymnasium
 pygame
