@@ -82,6 +82,8 @@ def main() -> None:
     p.add_argument("--outdir")
     p.add_argument("--size", default="1024x768")
     p.add_argument("--fullscreen", action="store_true")
+    p.add_argument("--no-vsync", action="store_true",
+                   help="do not lock flips to the monitor refresh (default: try to)")
     p.add_argument("--dummy-trigger", action="store_true")
     p.add_argument("--save-pixels", action="store_true",
                    help="ALE only: also store lossless pixels (large; warns).")
@@ -107,7 +109,7 @@ def main() -> None:
         if backend == "vgdl" and args.vgdl_repo:
             phase.setdefault("repo", args.vgdl_repo)
 
-    display = Display(size=(w, h), fullscreen=args.fullscreen)
+    display = Display(size=(w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync)
     audio = Audio()
     try:
         session = Session(args.subject, curriculum, display, outdir,

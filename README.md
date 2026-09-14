@@ -143,7 +143,7 @@ playwright, box2d-py, MuJoCo GL, ROM import).
 Runtime flow: experimenter screen (**SPACE**) → "Waiting for scanner..." →
 scanner **trigger `=`** (anchors the session clock) → curriculum phases → done.
 `ESC` quits early but still saves. Flags: `--size 1280x1024`, `--fullscreen`,
-`--save-pixels` (ALE only; see below).
+`--no-vsync` (see [Timing](#timing-what-is-stamped-when)), `--save-pixels` (ALE only; see below).
 
 ## Running stable-retro games
 
@@ -289,7 +289,7 @@ Controls, phase fields and the logged columns are documented in the configs'
 ```
 fmri_gym/
   session.py        # trigger, clock, curriculum loop, phases  — 100% engine-agnostic
-  display.py        # pygame: fixed window, aspect-fit frame, fixation, text, survey
+  display.py        # pygame: fixed window, aspect-fit frame, fixation, text; vsync-locked flip + call_on_flip
   logging.py        # manifest.json + one compressed .npz per game block
   triggers.py       # run-start sync (wait/send/none) + MEG/EEG marker codes over lsl/serial/parallel
   adapters/
@@ -445,18 +445,37 @@ refused). Every value sent is logged: per frame as `marker` in the block
 `.npz`, lifecycle events with their `session_time` under `triggers` in
 `manifest.json`.
 
+## Timing
+
+Frames are shown with a vsync-locked flip and each frame's onset is logged as
+`flip_time`; message/fixation onsets in the manifest are flip times too. Key
+presses and releases are logged as they arrive (`key_time`, `key_name`,
+`key_down`), independent of the frame grid. The manifest records the display
+actually obtained (`vsync`, measured at start-up; `refresh_rate`).
+
+- Pick a game `fps` that divides the monitor's refresh rate (30 or 60 on 60 Hz).
+- Before a MEG/EEG session, check that the rig locks to the refresh:
+  `python -m fmri_gym.display --fullscreen` (verdict LOCKED / NOT locked; if
+  not, use fullscreen and disable the desktop compositor). `--no-vsync` turns
+  the request off.
+
 ## Output & data format
 
 Each session writes `data/<subject>_<timestamp>/`:
 
-- **`manifest.json`** — subject, curriculum, trigger epoch, and per-phase
-  onsets/offsets (+ survey responses).
+- **`manifest.json`** — subject, curriculum, trigger epoch, per-phase
+  onsets/offsets (+ survey responses; onsets are flip times), the `display`
+  actually opened (size, `vsync`, `refresh_rate`, driver) and the `triggers`
+  settings + lifecycle markers sent.
 - **`block-NN_<backend>_<game>.npz`** — one per game block, uniform schema:
 
   | key | meaning |
   |-----|---------|
   | `actions`, `rewards`, `terminal`, `episode_id` | per frame |
-  | `session_time`, `wall_time` | seconds since trigger; wall-clock Unix time |
+  | `session_time`, `wall_time` | seconds since trigger (after the step); wall-clock Unix time |
+  | `flip_time` | seconds since trigger of the **flip that showed the frame** (its onset; vsync-locked when the display reports `vsync: true`) |
+  | `key_time`, `key_name`, `key_down` | every key press/release during the block, stamped on arrival (~1 ms), independent of the frame grid |
+  | `marker` | the trigger value sent on that frame's flip (only when a marker backend is active) |
   | `states` | per-frame savestate blob (object array; `None` if engine has none) |
   | `episode_seeds` | RNG seed per episode |
   | `backend`, `game` | provenance |

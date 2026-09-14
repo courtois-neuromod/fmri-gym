@@ -330,6 +330,8 @@ class Markers:
         self._backend, self.active = _open_backend(settings)
         self.enabled = settings.backend != "null"
         self.events: list[dict[str, Any]] = []
+        #: value sent by the latest :meth:`frame` call (0 if none), for the log.
+        self.last_frame = 0
         self._level = 0     # frame code currently on the lines (0 between blocks)
         self._n_sent = 0    # frame markers sent in the current block
 
@@ -375,10 +377,12 @@ class Markers:
         s = self.settings
         n = self._n_sent
         self._n_sent += 1
+        self.last_frame = 0
         if not s.on_frame or n % s.frame_every:
             return 0
         self._level = self.codes.frame(n // s.frame_every)
         self._backend.send(self._level)
+        self.last_frame = self._level
         return self._level
 
     def episode_start(self) -> int:
