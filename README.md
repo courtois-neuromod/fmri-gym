@@ -414,9 +414,8 @@ CartPole similarly uses `{"LEFT": 0, "RIGHT": 1}`.
 
 ## Triggers: fMRI vs MEG/EEG
 
-By default a session waits for the scanner's `=` key and sends nothing (fMRI).
-For MEG/EEG add a `"triggers"` section next to `"curriculum"` (full example:
-`configs/demo_meg.json`):
+The `"triggers"` section next to `"curriculum"` says how a run starts and what
+the recording gets (full example: `configs/demo_meg.json`):
 
 ```jsonc
 "triggers": {
@@ -427,14 +426,33 @@ For MEG/EEG add a `"triggers"` section next to `"curriculum"` (full example:
 
 | `sync.mode` | after the experimenter's SPACE… |
 |---|---|
-| `wait` (default) | wait for `key` (default `"="`) from the trigger box, then start |
+| `wait` | wait for `key` (default `"="`) from the trigger box, then start |
 | `send` | send the `scanner_start` code on the trigger line, wait `delay` s, then start |
 | `none` | start immediately |
 
-`backend`: `null` (default), `lsl`, `serial` or `parallel` — `uv sync --extra
-triggers` (pylsl / pyserial / pyparallel); `port` for serial/parallel,
-`lsl_stream_name` for LSL. A backend that cannot be opened stops the run
-before the experimenter screen, with the reason and the fix.
+`backend`: `null`, `lsl`, `serial` or `parallel` — `uv sync --extra triggers`
+(pylsl / pyserial / pyparallel); `port` for serial/parallel, `lsl_stream_name`
+for LSL. A backend that cannot be opened stops the run before the window
+opens, with the reason and the fix.
+
+Nothing here is tied to a modality — rigs differ, so the config says what
+happens and the code enforces only that it is consistent (`send` needs a
+backend). The usual choices:
+
+| setup | `sync.mode` | `backend` |
+|---|---|---|
+| fMRI, trigger box types `=` | `wait` | `null` (no trigger line) |
+| MEG/EEG, acquisition started from the trigger input | `send` | `serial` / `parallel` / `lsl` |
+| MEG/EEG, acquisition started by hand, stimulus PC gets the scanner pulse | `wait` | `serial` / `parallel` / `lsl` |
+| bench test, nothing connected | `none` | `null` |
+
+Leaving `sync.mode` or `backend` out is allowed and defaults to `wait` /
+`null` (the safest pair), but never silently: the experimenter screen and the
+console show the trigger status of the run (`NOT SET in config: sync.mode,
+backend`), and the manifest keeps it under `triggers.defaulted`. The worst
+outcome is a session that runs fine and turns out to have sent no triggers.
+`--dummy-trigger` announces itself the same way (and is recorded as
+`dummy_trigger` in the manifest).
 
 What is sent: `task_start` when the clock anchors, `episode_start` at each
 reset, one code per frame (`"frame_every": N` to thin, `"on_frame": false` to
@@ -479,8 +497,9 @@ Each session writes `data/<subject>_<timestamp>/`:
 
 - **`manifest.json`** — subject, curriculum, trigger epoch, per-phase
   onsets/offsets (+ survey responses; onsets are flip times), the `display`
-  actually opened (size, `vsync`, `refresh_rate`, driver) and the `triggers`
-  settings + lifecycle triggers sent.
+  actually opened (size, `vsync`, `refresh_rate`, driver), the `triggers`
+  settings + lifecycle triggers sent (+ what the config left `defaulted`) and
+  `dummy_trigger`.
 - **`block-NN_<backend>_<game>.npz`** — one per game block, uniform schema:
 
   | key | meaning |

@@ -167,6 +167,11 @@ class TriggerSettings:
     frame_every: int = 1
     on_episode_start: bool = True
     codes: Codes = field(default_factory=Codes)
+    #: The two settings that decide what the recording gets and that the
+    #: config left unset (``"sync.mode"``, ``"backend"``). Defaulting them is
+    #: allowed, silently is not: the session shows them on the experimenter
+    #: screen and the manifest keeps them.
+    defaulted: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, d: dict | None) -> TriggerSettings:
@@ -179,10 +184,13 @@ class TriggerSettings:
             send on.
         """
         d = dict(d or {})
-        sync = SyncSettings.from_dict(d.pop("sync", None))
+        sync_d = d.pop("sync", None) or {}
+        defaulted = tuple(key for key, given in (("sync.mode", "mode" in sync_d),
+                                                 ("backend", "backend" in d)) if not given)
+        sync = SyncSettings.from_dict(sync_d)
         codes = Codes(**d.pop("codes", {}))
         codes.validate()
-        s = cls(sync=sync, codes=codes, **d)
+        s = cls(sync=sync, codes=codes, defaulted=defaulted, **d)
         if s.backend not in TRIGGER_BACKENDS:
             raise ValueError(f"triggers: unknown backend {s.backend!r}; "
                              f"expected one of {TRIGGER_BACKENDS}")
@@ -411,6 +419,27 @@ class Triggers:
         """Close the transport."""
         self._backend.close()
 
+    def status(self) -> str:
+        """One line saying what this run will do, for the experimenter screen and the console.
+
+        Names the start sync, the transport (or that nothing is sent) and any
+        setting the config left to its default -- the run should never end
+        with someone discovering the recording got no triggers.
+
+        :return: e.g. ``"wait for scanner key '=' | no trigger codes sent
+            (backend null) | NOT SET in config: sync.mode, backend"``.
+        """
+        sync = self.sync
+        start = {"wait": f"wait for scanner key {sync.key!r}",
+                 "send": f"send scanner_start, then wait {sync.delay:g} s",
+                 "none": "no scanner sync (start on SPACE)"}[sync.mode]
+        out = (f"codes over {self.active}" if self.enabled
+               else "no trigger codes sent (backend null)")
+        parts = [start, out]
+        if self.settings.defaulted:
+            parts.append("NOT SET in config: " + ", ".join(self.settings.defaulted))
+        return " | ".join(parts)
+
     def describe(self, clock: Clock | None = None) -> dict[str, Any]:
         """Settings, the open transport, and the lifecycle events sent.
 
@@ -423,4 +452,7 @@ class Triggers:
         if clock is not None and clock.t0_perf is not None:
             for e in events:
                 e["session_time"] = clock.from_perf(e["perf_time"])
-        return {"settings": asdict(self.settings), "active": self.active, "events": events}
+        settings = asdict(self.settings)
+        defaulted = settings.pop("defaulted")
+        return {"settings": settings, "defaulted": defaulted, "active": self.active,
+                "events": events}

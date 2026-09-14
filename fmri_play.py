@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
 
 from fmri_gym import Audio, Display, Session, Triggers
@@ -110,6 +111,10 @@ def main() -> None:
     # Triggers first: a bad section or an unopenable port stops the run here,
     # at the desk, before any window opens -- not mid-session with a participant.
     triggers = Triggers.from_config(config.get("triggers"))
+    print(f"triggers: {triggers.status()}", file=sys.stderr)
+    if args.dummy_trigger:
+        print("triggers: --dummy-trigger: the experimenter and scanner waits are skipped; "
+              "this is a test run, not a session", file=sys.stderr)
     display = Display(size=(w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync)
     audio = Audio()
     session = Session(args.subject, curriculum, display, outdir,

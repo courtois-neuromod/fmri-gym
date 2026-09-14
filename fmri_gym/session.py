@@ -210,6 +210,7 @@ class Session:
         self.clock = Clock()
         self.logger = Logger(outdir, subject, curriculum, self.clock)
         self.logger.set_extra("display", display.describe())
+        self.logger.set_extra("dummy_trigger", dummy_trigger)
         self.outdir = outdir
         self.triggers = triggers or Triggers.from_config(None)
         self.sync = self.triggers.sync
@@ -217,14 +218,16 @@ class Session:
     def _trigger(self) -> None:
         """Wait for experimenter ready, sync with the scanner, start the clock.
 
-        Draws the readiness screen, then either waits for the trigger key,
-        sends the start code (``sync.mode``), or neither; then calls
-        :meth:`Clock.trigger`, records the trigger time on the logger and
-        sends ``task_start``.
+        Draws the readiness screen -- with the trigger status on it, so the
+        experimenter sees what this run will do before pressing SPACE -- then
+        either waits for the trigger key, sends the start code (``sync.mode``),
+        or neither; then calls :meth:`Clock.trigger`, records the trigger time
+        on the logger and sends ``task_start``.
         """
         self.display.draw_text(
             "Please keep your head as still as possible.\n\n"
-            "(experimenter: press SPACE when ready)")
+            "(experimenter: press SPACE when ready)\n\n"
+            f"triggers: {self.triggers.status()}")
         _wait_for_char(self.display, EXPERIMENTER_KEY, dummy_trigger=self.dummy_trigger)
         if self.sync.mode == "wait":
             self.display.draw_text("Waiting for scanner...")
