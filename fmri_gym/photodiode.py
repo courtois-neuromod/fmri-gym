@@ -50,7 +50,7 @@ import numpy as np
 import pygame
 
 from .display import Display
-from .triggers import TriggerError, TriggerSettings, Triggers
+from .triggers import TriggerSettings, Triggers
 
 CORNERS = ("br", "bl", "tr", "tl")
 
@@ -292,12 +292,8 @@ def main() -> None:
     outdir = args.outdir or os.path.join("data", f"photodiode_{time.strftime('%Y%m%d-%H%M%S')}")
     os.makedirs(outdir, exist_ok=True)
     w, h = (int(x) for x in args.size.lower().split("x"))
+    triggers = Triggers(_trigger_settings(args))    # before the window: fails at the desk
     display = Display((w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync)
-    try:
-        triggers = Triggers(_trigger_settings(args))
-    except (TriggerError, ValueError) as exc:
-        display.close()
-        sys.exit(f"error: {exc}")
     recorder = None
     if args.audio:
         try:

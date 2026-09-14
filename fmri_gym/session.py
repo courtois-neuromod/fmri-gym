@@ -185,8 +185,8 @@ class Session:
         display: Display,
         outdir: str,
         audio: Audio | None = None,
+        triggers: Triggers | None = None,
         dummy_trigger: bool = False,
-        triggers: dict | None = None,
     ) -> None:
         """Set up clock, logger, and phase dispatch for one subject.
 
@@ -196,13 +196,11 @@ class Session:
         :param outdir: directory for the session manifest and game npz files.
         :param audio: shared audio output used by all phases; one is created if
             omitted, and stays silent unless an adapter returns sound.
+        :param triggers: shared trigger output (start sync + codes; see
+            :mod:`fmri_gym.triggers`), built by the caller like the display
+            and the audio. ``None`` = the fMRI default: wait for ``=``, send
+            no trigger codes.
         :param dummy_trigger: if ``True``, skip real experimenter/scanner waits.
-        :param triggers: optional ``triggers`` config section (``sync`` plus
-            the backend keys; see :mod:`fmri_gym.triggers`). ``None`` = fMRI
-            default: wait for ``=``, send no trigger codes.
-        :raises TriggerError: if a trigger backend cannot be opened, or
-            ``sync.mode`` is ``send`` with no backend to send on.
-        :raises ValueError: on an invalid ``triggers`` section.
         """
         self.subject = subject
         self.curriculum = curriculum
@@ -213,7 +211,7 @@ class Session:
         self.logger = Logger(outdir, subject, curriculum, self.clock)
         self.logger.set_extra("display", display.describe())
         self.outdir = outdir
-        self.triggers = Triggers.from_config(triggers, self.clock)
+        self.triggers = triggers or Triggers.from_config(None)
         self.sync = self.triggers.sync
 
     def _trigger(self) -> None:
@@ -508,8 +506,7 @@ class Session:
         finally:
             if self.clock.t0_perf is not None:
                 self.triggers.lifecycle("task_stop")
-            self.logger.set_extra("triggers", self.triggers.describe())
-            self.triggers.close()
+            self.logger.set_extra("triggers", self.triggers.describe(self.clock))
             manifest_path = self.logger.save_manifest()
             print(f"Saved session to: {self.outdir}")
             print(f"Manifest: {manifest_path}")

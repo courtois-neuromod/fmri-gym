@@ -16,8 +16,9 @@ One section, two concerns:
 * the rest (:class:`TriggerSettings`) -- which codes go out, over what.
   Backends: ``null`` (default, sends nothing), ``lsl``, ``serial``,
   ``parallel``. A backend that cannot be opened raises :class:`TriggerError`
-  when the session is built, i.e. before the experimenter screen: better a
-  clear stop at the desk than a silent recording without triggers.
+  when :class:`Triggers` is built -- in ``fmri_play.py`` that is before the
+  window even opens: better a clear stop at the desk than a silent recording
+  without triggers.
 
 Code scheme -- disjoint bit fields, so coincident triggers stay decodable
 -----------------------------------------------------------------------
@@ -314,9 +315,12 @@ def _open_backend(s: TriggerSettings) -> tuple[_Backend, str]:
 class Triggers:
     """Sends trigger codes for one session and remembers the lifecycle ones.
 
-    Construct via :meth:`from_config`; :meth:`disabled` gives the no-op used
-    when the config has no ``triggers`` section, so the session loop can call
-    these methods unconditionally.
+    Built once per run, next to the :class:`~fmri_gym.display.Display` and
+    the :class:`~fmri_gym.audio.Audio`, and passed to the
+    :class:`~fmri_gym.session.Session`; :meth:`from_config` on ``None`` gives
+    the ``null`` no-op, so the session loop calls these methods
+    unconditionally. Events are stamped with ``perf_counter``;
+    :meth:`describe` converts them to session time once given the clock.
 
     :ivar sync: the start-sync settings, for the session's trigger screen.
     :ivar enabled: ``False`` for the ``null`` backend -- the session then skips
@@ -324,17 +328,15 @@ class Triggers:
     :ivar events: every lifecycle trigger sent, with its value and times.
     """
 
-    def __init__(self, settings: TriggerSettings, clock: Clock | None = None) -> None:
+    def __init__(self, settings: TriggerSettings) -> None:
         """Open the backend.
 
         :param settings: validated trigger settings.
-        :param clock: the session clock, for ``session_time`` on events.
         :raises TriggerError: if the backend cannot be opened.
         """
         self.settings = settings
         self.sync = settings.sync
         self.codes = settings.codes
-        self.clock = clock
         self._backend, self.active = _open_backend(settings)
         self.enabled = settings.backend != "null"
         self.events: list[dict[str, Any]] = []
@@ -344,19 +346,16 @@ class Triggers:
         self._n_sent = 0    # frame triggers sent in the current block
 
     @classmethod
-    def disabled(cls, clock: Clock | None = None) -> Triggers:
-        """A no-op instance (``null`` backend, nothing recorded)."""
-        return cls(TriggerSettings(), clock)
-
-    @classmethod
-    def from_config(cls, section: dict | None, clock: Clock | None = None) -> Triggers:
+    def from_config(cls, section: dict | None) -> Triggers:
         """Build from the ``triggers`` config section.
 
-        :param section: the dict, or ``None`` for :meth:`disabled`.
-        :param clock: the session clock.
+        :param section: the dict, or ``None`` for the defaults (``null``
+            backend, wait for the scanner key).
         :return: an open :class:`Triggers`.
+        :raises TriggerError: if the backend cannot be opened.
+        :raises ValueError: on an invalid section.
         """
-        return cls(TriggerSettings.from_dict(section), clock)
+        return cls(TriggerSettings.from_dict(section))
 
     def lifecycle(self, name: str) -> int:
         """Send a lifecycle trigger, OR'd with the frame level in force.
@@ -370,7 +369,7 @@ class Triggers:
         value = self.codes.lifecycle(name) | self._level
         self._backend.send(value)
         self.events.append({"name": name, "value": value,
-                            "wall_time": time.time(), "session_time": self._session_time()})
+                            "wall_time": time.time(), "perf_time": time.perf_counter()})
         if self._backend.holds_level and self._level == 0:
             time.sleep(self.settings.pulse_ms / 1000.0)
             self._backend.clear()
@@ -412,14 +411,16 @@ class Triggers:
         """Close the transport."""
         self._backend.close()
 
-    def describe(self) -> dict[str, Any]:
+    def describe(self, clock: Clock | None = None) -> dict[str, Any]:
         """Settings, the open transport, and the lifecycle events sent.
 
+        :param clock: a triggered session clock; each event then also gets a
+            ``session_time`` (negative for ``scanner_start``, which precedes
+            the anchor).
         :return: a JSON-serializable dict for the manifest.
         """
-        return {"settings": asdict(self.settings), "active": self.active, "events": self.events}
-
-    def _session_time(self) -> float | None:
-        if self.clock is None or self.clock.t0_perf is None:
-            return None
-        return self.clock.session_time()
+        events = [dict(e) for e in self.events]
+        if clock is not None and clock.t0_perf is not None:
+            for e in events:
+                e["session_time"] = clock.from_perf(e["perf_time"])
+        return {"settings": asdict(self.settings), "active": self.active, "events": events}

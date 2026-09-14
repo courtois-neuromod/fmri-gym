@@ -18,11 +18,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 import time
 
-from fmri_gym import Audio, Display, Session
-from fmri_gym.triggers import TriggerError
+from fmri_gym import Audio, Display, Session, Triggers
 
 
 def build_demo_curriculum() -> list[dict]:
@@ -109,22 +107,19 @@ def main() -> None:
         if backend == "vgdl" and args.vgdl_repo:
             phase.setdefault("repo", args.vgdl_repo)
 
+    # Triggers first: a bad section or an unopenable port stops the run here,
+    # at the desk, before any window opens -- not mid-session with a participant.
+    triggers = Triggers.from_config(config.get("triggers"))
     display = Display(size=(w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync)
     audio = Audio()
-    try:
-        session = Session(args.subject, curriculum, display, outdir,
-                          audio=audio, dummy_trigger=args.dummy_trigger,
-                          triggers=config.get("triggers"))
-    except (TriggerError, ValueError) as exc:
-        # A bad triggers section or an unopenable trigger port: stop here, at
-        # the desk, with the reason -- not mid-session with a participant.
-        display.close()
-        sys.exit(f"error: {exc}")
+    session = Session(args.subject, curriculum, display, outdir,
+                      audio=audio, triggers=triggers, dummy_trigger=args.dummy_trigger)
     try:
         session.run()
     finally:
         display.close()
         audio.close()
+        triggers.close()
 
 
 if __name__ == "__main__":
