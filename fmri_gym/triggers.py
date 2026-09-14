@@ -1,29 +1,28 @@
-"""Recording-device triggers: run-start sync and per-event markers.
+"""Recording-device triggers: run-start sync and per-event trigger codes.
 
 fMRI needs one thing from the stimulus PC: to *wait* for the scanner's first
 volume (the ``=`` key from the trigger box) and anchor the session clock on
-it. MEG/EEG need the opposite direction: the stimulus PC *sends* marker codes
+it. MEG/EEG need the opposite direction: the stimulus PC *sends* trigger codes
 onto a trigger line -- often also to start the acquisition -- and the analyst
 realigns the recording to the frame log by those codes. Both live under one
 optional ``"triggers"`` section of the config so a single curriculum runs at
 either scanner; without the section, behaviour is the fMRI one as before.
 
-Two independent parts, mirroring the ``sync`` / ``triggers`` split of the
-neuromod task repos:
+One section, two concerns:
 
-* :class:`Sync` -- what gates the start of the session: ``wait`` for a key,
-  ``send`` a start code over the marker backend (some MEG systems start
-  recording on it), or ``none``.
-* :class:`Markers` -- which codes go out, over what. Backends: ``null``
-  (default, sends nothing), ``lsl``, ``serial``, ``parallel``. A backend that
-  cannot be opened raises :class:`TriggerError` when the session is built,
-  i.e. before the experimenter screen: better a clear stop at the desk than
-  a silent recording without markers.
+* ``sync`` (:class:`SyncSettings`) -- what gates the start of the session:
+  ``wait`` for a key, ``send`` a start code over the trigger backend (some MEG
+  systems start recording on it), or ``none``.
+* the rest (:class:`TriggerSettings`) -- which codes go out, over what.
+  Backends: ``null`` (default, sends nothing), ``lsl``, ``serial``,
+  ``parallel``. A backend that cannot be opened raises :class:`TriggerError`
+  when the session is built, i.e. before the experimenter screen: better a
+  clear stop at the desk than a silent recording without triggers.
 
-Code scheme -- disjoint bit fields, so coincident markers stay decodable
-----------------------------------------------------------------------
+Code scheme -- disjoint bit fields, so coincident triggers stay decodable
+-----------------------------------------------------------------------
 A parallel port (and most MEG trigger inputs) is a set of lines read as one
-integer, and two markers written within one sample of each other are seen
+integer, and two codes written within one sample of each other are seen
 OR'd together. The scheme therefore never shares bits between events:
 
 * **frames** cycle through the low ``frame_bits`` bits (``1..2**bits-1``,
@@ -36,9 +35,9 @@ OR'd together. The scheme therefore never shares bits between events:
   as ``16 | 5`` and both survive. :meth:`Codes.validate` refuses any scheme
   where two codes overlap.
 
-Action markers are deliberately absent: every action is already logged per
+Action triggers are deliberately absent: every action is already logged per
 frame with its session time, which is enough to realign it to the frame
-markers and the emulator state.
+triggers and the emulator state.
 
 Backend deps (pylsl, pyserial, pyparallel) are imported lazily, in the backend
 that needs them, so the core stays dependency-free.
@@ -58,7 +57,7 @@ log = logging.getLogger(__name__)
 
 LIFECYCLE_EVENTS = ("task_start", "task_stop", "episode_start", "scanner_start")
 SYNC_MODES = ("wait", "send", "none")
-MARKER_BACKENDS = ("null", "lsl", "serial", "parallel")
+TRIGGER_BACKENDS = ("null", "lsl", "serial", "parallel")
 
 
 class TriggerError(RuntimeError):
@@ -72,7 +71,7 @@ class TriggerError(RuntimeError):
 
 @dataclass(frozen=True)
 class Codes:
-    """The marker code scheme; see the module docstring for the bit layout."""
+    """The trigger code scheme; see the module docstring for the bit layout."""
 
     frame_bits: int = 3
     task_start: int = 8
@@ -86,9 +85,9 @@ class Codes:
         return (1 << self.frame_bits) - 1
 
     def frame(self, n_sent: int) -> int:
-        """Frame code for the ``n_sent``-th frame marker of a block (cycles ``1..mask``).
+        """Frame code for the ``n_sent``-th frame trigger of a block (cycles ``1..mask``).
 
-        :param n_sent: how many frame markers this block has sent so far.
+        :param n_sent: how many frame triggers this block has sent so far.
         :return: a value in ``1..frame_mask``, never 0.
         """
         return 1 + n_sent % self.frame_mask
@@ -102,7 +101,7 @@ class Codes:
         return int(getattr(self, name))
 
     def validate(self) -> None:
-        """Refuse any scheme in which two markers could not be told apart.
+        """Refuse any scheme in which two triggers could not be told apart.
 
         :raises ValueError: if a code leaves one byte, overlaps the frame
             field, or overlaps another lifecycle code.
@@ -121,42 +120,7 @@ class Codes:
             for b in names[i + 1:]:
                 if codes[a] & codes[b]:
                     raise ValueError(f"triggers: codes {a}={codes[a]} and {b}={codes[b]} "
-                                     "share a bit; coincident markers could not be decoded")
-
-
-@dataclass(frozen=True)
-class MarkerSettings:
-    """The ``triggers.markers`` section."""
-
-    backend: str = "null"
-    port: str | None = None
-    lsl_stream_name: str = "fmri_gym"
-    #: parallel only: how long a lifecycle code is held when no frame level
-    #: is in force (between blocks); inside a block the next frame clears it.
-    pulse_ms: float = 10.0
-    on_frame: bool = True
-    frame_every: int = 1
-    on_episode_start: bool = True
-    codes: Codes = field(default_factory=Codes)
-
-    @classmethod
-    def from_dict(cls, d: dict | None) -> MarkerSettings:
-        """Build from the config section, filling defaults and validating.
-
-        :param d: the ``markers`` dict, or ``None`` for all defaults.
-        :return: validated settings.
-        :raises ValueError: on an unknown backend or an ambiguous code scheme.
-        """
-        d = dict(d or {})
-        codes = Codes(**d.pop("codes", {}))
-        codes.validate()
-        s = cls(codes=codes, **d)
-        if s.backend not in MARKER_BACKENDS:
-            raise ValueError(f"triggers: unknown markers backend {s.backend!r}; "
-                             f"expected one of {MARKER_BACKENDS}")
-        if s.frame_every < 1:
-            raise ValueError("triggers: frame_every must be >= 1")
-        return s
+                                     "share a bit; coincident triggers could not be decoded")
 
 
 @dataclass(frozen=True)
@@ -164,7 +128,7 @@ class SyncSettings:
     """The ``triggers.sync`` section: what gates the start of the session."""
 
     #: ``wait`` for ``key`` (fMRI trigger box), ``send`` the ``scanner_start``
-    #: code over the marker backend (MEG started from the trigger line), or
+    #: code over the trigger backend (MEG started from the trigger line), or
     #: ``none`` (start on the experimenter's key alone).
     mode: str = "wait"
     key: str = "="
@@ -184,6 +148,48 @@ class SyncSettings:
         if s.mode not in SYNC_MODES:
             raise ValueError(f"triggers: unknown sync mode {s.mode!r}; "
                              f"expected one of {SYNC_MODES}")
+        return s
+
+
+@dataclass(frozen=True)
+class TriggerSettings:
+    """The ``triggers`` section: the start sync plus what goes out, over what."""
+
+    sync: SyncSettings = field(default_factory=SyncSettings)
+    backend: str = "null"
+    port: str | None = None
+    lsl_stream_name: str = "fmri_gym"
+    #: parallel only: how long a lifecycle code is held when no frame level
+    #: is in force (between blocks); inside a block the next frame clears it.
+    pulse_ms: float = 10.0
+    on_frame: bool = True
+    frame_every: int = 1
+    on_episode_start: bool = True
+    codes: Codes = field(default_factory=Codes)
+
+    @classmethod
+    def from_dict(cls, d: dict | None) -> TriggerSettings:
+        """Build from the config section, filling defaults and validating.
+
+        :param d: the ``triggers`` dict, or ``None`` for all defaults.
+        :return: validated settings.
+        :raises ValueError: on an unknown backend or an ambiguous code scheme.
+        :raises TriggerError: if ``sync.mode`` is ``send`` with no backend to
+            send on.
+        """
+        d = dict(d or {})
+        sync = SyncSettings.from_dict(d.pop("sync", None))
+        codes = Codes(**d.pop("codes", {}))
+        codes.validate()
+        s = cls(sync=sync, codes=codes, **d)
+        if s.backend not in TRIGGER_BACKENDS:
+            raise ValueError(f"triggers: unknown backend {s.backend!r}; "
+                             f"expected one of {TRIGGER_BACKENDS}")
+        if s.frame_every < 1:
+            raise ValueError("triggers: frame_every must be >= 1")
+        if sync.mode == "send" and s.backend == "null":
+            raise TriggerError('triggers: sync.mode "send" sends scanner_start on the trigger '
+                               'line, so triggers.backend must not be "null"')
         return s
 
 
@@ -268,10 +274,10 @@ class _Parallel:
         self.clear()
 
 
-def _open_backend(s: MarkerSettings) -> tuple[_Backend, str]:
+def _open_backend(s: TriggerSettings) -> tuple[_Backend, str]:
     """Open the configured transport.
 
-    :param s: marker settings.
+    :param s: trigger settings.
     :return: ``(backend, description)``; the description names what is open,
         for the manifest and the console.
     :raises TriggerError: if the backend's package is missing, no port is
@@ -280,10 +286,10 @@ def _open_backend(s: MarkerSettings) -> tuple[_Backend, str]:
     """
     if s.backend == "null":
         return _Null(), "null"
-    hint = 'set triggers.markers.backend to "null" to run without markers'
+    hint = 'set triggers.backend to "null" to run without trigger codes'
     target = s.lsl_stream_name if s.backend == "lsl" else s.port
     if s.backend != "lsl" and not s.port:
-        raise TriggerError(f"triggers: markers backend {s.backend!r} needs a port "
+        raise TriggerError(f"triggers: backend {s.backend!r} needs a port "
                            f"(e.g. /dev/ttyUSB0 or /dev/parport0); {hint}")
     try:
         if s.backend == "lsl":
@@ -293,38 +299,40 @@ def _open_backend(s: MarkerSettings) -> tuple[_Backend, str]:
         return _Parallel(s.port), f"parallel:{target}"
     except ImportError as exc:
         pkg = {"lsl": "pylsl", "serial": "pyserial", "parallel": "pyparallel"}[s.backend]
-        raise TriggerError(f"triggers: the {s.backend} markers backend needs the {pkg} "
+        raise TriggerError(f"triggers: the {s.backend} backend needs the {pkg} "
                            f"package (pip install {pkg}); {hint}") from exc
     except Exception as exc:  # noqa: BLE001 -- any device failure, reworded with the fix
-        raise TriggerError(f"triggers: cannot open {s.backend} markers on {target}: {exc}; "
+        raise TriggerError(f"triggers: cannot open {s.backend} triggers on {target}: {exc}; "
                            f"check the device and permissions, or {hint}") from exc
 
 
 # ---------------------------------------------------------------------------
-# Markers
+# Triggers
 # ---------------------------------------------------------------------------
 
 
-class Markers:
-    """Sends marker codes for one session and remembers the lifecycle ones.
+class Triggers:
+    """Sends trigger codes for one session and remembers the lifecycle ones.
 
     Construct via :meth:`from_config`; :meth:`disabled` gives the no-op used
     when the config has no ``triggers`` section, so the session loop can call
     these methods unconditionally.
 
+    :ivar sync: the start-sync settings, for the session's trigger screen.
     :ivar enabled: ``False`` for the ``null`` backend -- the session then skips
-        logging a per-frame ``marker`` column.
-    :ivar events: every lifecycle marker sent, with its value and times.
+        logging a per-frame ``trigger`` column.
+    :ivar events: every lifecycle trigger sent, with its value and times.
     """
 
-    def __init__(self, settings: MarkerSettings, clock: Clock | None = None) -> None:
+    def __init__(self, settings: TriggerSettings, clock: Clock | None = None) -> None:
         """Open the backend.
 
-        :param settings: validated marker settings.
+        :param settings: validated trigger settings.
         :param clock: the session clock, for ``session_time`` on events.
         :raises TriggerError: if the backend cannot be opened.
         """
         self.settings = settings
+        self.sync = settings.sync
         self.codes = settings.codes
         self.clock = clock
         self._backend, self.active = _open_backend(settings)
@@ -333,25 +341,25 @@ class Markers:
         #: value sent by the latest :meth:`frame` call (0 if none), for the log.
         self.last_frame = 0
         self._level = 0     # frame code currently on the lines (0 between blocks)
-        self._n_sent = 0    # frame markers sent in the current block
+        self._n_sent = 0    # frame triggers sent in the current block
 
     @classmethod
-    def disabled(cls, clock: Clock | None = None) -> Markers:
+    def disabled(cls, clock: Clock | None = None) -> Triggers:
         """A no-op instance (``null`` backend, nothing recorded)."""
-        return cls(MarkerSettings(), clock)
+        return cls(TriggerSettings(), clock)
 
     @classmethod
-    def from_config(cls, section: dict | None, clock: Clock | None = None) -> Markers:
-        """Build from the ``triggers.markers`` config section.
+    def from_config(cls, section: dict | None, clock: Clock | None = None) -> Triggers:
+        """Build from the ``triggers`` config section.
 
         :param section: the dict, or ``None`` for :meth:`disabled`.
         :param clock: the session clock.
-        :return: an open :class:`Markers`.
+        :return: an open :class:`Triggers`.
         """
-        return cls(MarkerSettings.from_dict(section), clock)
+        return cls(TriggerSettings.from_dict(section), clock)
 
     def lifecycle(self, name: str) -> int:
-        """Send a lifecycle marker, OR'd with the frame level in force.
+        """Send a lifecycle trigger, OR'd with the frame level in force.
 
         Between blocks on a level-holding transport the code is pulsed for
         ``pulse_ms`` then cleared; inside a block the next frame clears it.
@@ -369,10 +377,10 @@ class Markers:
         return value
 
     def frame(self) -> int:
-        """Send the next frame marker of the block, if this frame gets one.
+        """Send the next frame trigger of the block, if this frame gets one.
 
         :return: the value sent, or 0 when this frame is thinned out or frame
-            markers are off (the level then stays as it was).
+            triggers are off (the level then stays as it was).
         """
         s = self.settings
         n = self._n_sent

@@ -63,7 +63,7 @@ def load_config(path: str) -> dict:
     """Load a config file: a bare curriculum list, or a dict with sections.
 
     The dict form carries ``"curriculum"`` plus optional ``"triggers"`` (sync +
-    markers; see :mod:`fmri_gym.triggers`). ``_``-prefixed keys are notes.
+    trigger codes; see :mod:`fmri_gym.triggers`). ``_``-prefixed keys are notes.
 
     :param path: JSON file path.
     :return: a dict with at least ``"curriculum"``.
@@ -116,7 +116,7 @@ def main() -> None:
                           audio=audio, dummy_trigger=args.dummy_trigger,
                           triggers=config.get("triggers"))
     except (TriggerError, ValueError) as exc:
-        # A bad triggers section or an unopenable marker port: stop here, at
+        # A bad triggers section or an unopenable trigger port: stop here, at
         # the desk, with the reason -- not mid-session with a participant.
         display.close()
         sys.exit(f"error: {exc}")

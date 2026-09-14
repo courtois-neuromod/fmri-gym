@@ -101,10 +101,10 @@ class Logger:
             backend=backend,
             game=game,
         )
-        # Per-frame marker code sent to the recording device (0 = none);
-        # present only when a marker backend is active.
-        if frames.get("marker"):
-            arrays["marker"] = np.asarray(frames["marker"], dtype=np.int16)
+        # Per-frame trigger code sent to the recording device (0 = none);
+        # present only when a trigger backend is active.
+        if frames.get("trigger"):
+            arrays["trigger"] = np.asarray(frames["trigger"], dtype=np.int16)
         # Every key press/release during the block, stamped on arrival
         # (~1 ms), independent of the frame grid.
         events = frames.get("key_events") or []

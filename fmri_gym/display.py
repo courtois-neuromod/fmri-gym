@@ -12,7 +12,7 @@ driver honours it, ``pygame.display.flip()`` blocks until the vertical blank
 at which the new image starts scanning out, so the stamp taken right after it
 (:attr:`last_flip`, returned by every ``draw_*``) is the onset of what is on
 screen, and callbacks queued with :meth:`call_on_flip` run at that instant --
-which is where MEG/EEG frame markers are sent.
+which is where MEG/EEG frame triggers are sent.
 
 Two facts make this robust rather than hopeful:
 
@@ -149,7 +149,7 @@ class Display:
 
         One-shot, like PsychoPy's ``callOnFlip``: with vsync the flip returns
         at the vertical blank, so this is the closest a program gets to "the
-        moment the frame appears" -- where a frame marker belongs.
+        moment the frame appears" -- where a frame trigger belongs.
 
         :param fn: callable to run.
         :param args: its positional arguments.

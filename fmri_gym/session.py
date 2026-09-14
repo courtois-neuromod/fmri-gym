@@ -6,7 +6,7 @@ inter-block intervals, timing/pacing, and logging. All engine-specific access
 goes through an EnvAdapter, so this file never imports ale_py / stable_retro
 and never touches env.unwrapped.
 
-Recording-device concerns (waiting for or sending the scanner start, marker
+Recording-device concerns (waiting for or sending the scanner start, trigger
 codes for MEG/EEG) go through :mod:`fmri_gym.triggers`; with no ``triggers``
 config the loop behaves as the fMRI default and sends nothing.
 """
@@ -16,7 +16,6 @@ from __future__ import annotations
 import sys
 import time
 from collections import defaultdict
-from dataclasses import asdict
 from typing import TYPE_CHECKING, Union
 
 import pygame
@@ -26,7 +25,7 @@ from .audio import Audio
 from .display import Display
 from .keys import held_key_names, key_name
 from .logging import Logger
-from .triggers import Markers, SyncSettings, TriggerError
+from .triggers import Triggers
 
 if TYPE_CHECKING:
     from .adapters.base import EnvAdapter
@@ -198,10 +197,10 @@ class Session:
         :param audio: shared audio output used by all phases; one is created if
             omitted, and stays silent unless an adapter returns sound.
         :param dummy_trigger: if ``True``, skip real experimenter/scanner waits.
-        :param triggers: optional ``triggers`` config section (``sync`` and
-            ``markers``; see :mod:`fmri_gym.triggers`). ``None`` = fMRI
-            default: wait for ``=``, send no markers.
-        :raises TriggerError: if a marker backend cannot be opened, or
+        :param triggers: optional ``triggers`` config section (``sync`` plus
+            the backend keys; see :mod:`fmri_gym.triggers`). ``None`` = fMRI
+            default: wait for ``=``, send no trigger codes.
+        :raises TriggerError: if a trigger backend cannot be opened, or
             ``sync.mode`` is ``send`` with no backend to send on.
         :raises ValueError: on an invalid ``triggers`` section.
         """
@@ -214,12 +213,8 @@ class Session:
         self.logger = Logger(outdir, subject, curriculum, self.clock)
         self.logger.set_extra("display", display.describe())
         self.outdir = outdir
-        triggers = triggers or {}
-        self.sync = SyncSettings.from_dict(triggers.get("sync"))
-        self.markers = Markers.from_config(triggers.get("markers"), self.clock)
-        if self.sync.mode == "send" and not self.markers.enabled:
-            raise TriggerError('triggers: sync.mode "send" sends scanner_start on the marker '
-                               'line, so triggers.markers.backend must not be "null"')
+        self.triggers = Triggers.from_config(triggers, self.clock)
+        self.sync = self.triggers.sync
 
     def _trigger(self) -> None:
         """Wait for experimenter ready, sync with the scanner, start the clock.
@@ -238,12 +233,12 @@ class Session:
             _wait_for_char(self.display, self.sync.key, dummy_trigger=self.dummy_trigger)
         elif self.sync.mode == "send":
             self.display.draw_text("Starting the recording...")
-            self.markers.lifecycle("scanner_start")
+            self.triggers.lifecycle("scanner_start")
             _wait_for_duration(self.display, self.sync.delay)
 
         self.clock.trigger()
         self.logger.set_trigger_time()
-        self.markers.lifecycle("task_start")
+        self.triggers.lifecycle("task_start")
 
     def _fixation(self, phase: dict, index: int) -> None:
         """Show a fixation cross for ``phase["duration"]`` seconds.
@@ -355,7 +350,7 @@ class Session:
 
         ## Reset environment and show initial state
         obs, info = adapter.reset(seed)
-        self.display.call_on_flip(self.markers.episode_start)
+        self.display.call_on_flip(self.triggers.episode_start)
         self.display.draw_frame(adapter.render())
         self.audio.play(adapter.sound())
 
@@ -381,8 +376,8 @@ class Session:
             save_blob = (ep_frame % state_stride == 0)
             ep_frame += 1
             fs = adapter.capture(obs, info, want_blob=save_blob)
-            # The frame marker goes out on the flip that shows this frame.
-            self.display.call_on_flip(self.markers.frame)
+            # The frame trigger goes out on the flip that shows this frame.
+            self.display.call_on_flip(self.triggers.frame)
             flip_t = self.display.draw_frame(adapter.render())
             self.audio.play(adapter.sound())
 
@@ -399,8 +394,8 @@ class Session:
             frames["flip_time"].append(self.clock.from_perf(flip_t))
             frames["wall_time"].append(self.clock.wall_time())
             frames["state_blob"].append(fs.blob)
-            if self.markers.enabled:
-                frames["marker"].append(self.markers.last_frame)
+            if self.triggers.enabled:
+                frames["trigger"].append(self.triggers.last_frame)
             for k, v in fs.variables.items():
                 frames["variables"][k].append(v)
         return False
@@ -470,7 +465,7 @@ class Session:
             if mode == "episode" and episode_id >= n_episodes:
                 break
 
-        self.markers.block_end()
+        self.triggers.block_end()
         extra = getattr(adapter, "block_extra", lambda: None)()
         adapter.close()
         # Some gym envs (classic-control) call pygame.display.quit() on close(),
@@ -512,10 +507,9 @@ class Session:
             print("Interrupted -- saving partial data.", file=sys.stderr)
         finally:
             if self.clock.t0_perf is not None:
-                self.markers.lifecycle("task_stop")
-            self.logger.set_extra("triggers", {"sync": asdict(self.sync),
-                                               "markers": self.markers.describe()})
-            self.markers.close()
+                self.triggers.lifecycle("task_stop")
+            self.logger.set_extra("triggers", self.triggers.describe())
+            self.triggers.close()
             manifest_path = self.logger.save_manifest()
             print(f"Saved session to: {self.outdir}")
             print(f"Manifest: {manifest_path}")
