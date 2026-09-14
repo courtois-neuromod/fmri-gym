@@ -431,8 +431,8 @@ For MEG/EEG add a `"triggers"` section next to `"curriculum"` (full example:
 | `send` | send the `scanner_start` code on the trigger line, wait `delay` s, then start |
 | `none` | start immediately |
 
-`backend`: `null` (default), `lsl`, `serial` or `parallel` — `pip
-install pylsl` / `pyserial` / `pyparallel`; `port` for serial/parallel,
+`backend`: `null` (default), `lsl`, `serial` or `parallel` — `uv sync --extra
+triggers` (pylsl / pyserial / pyparallel); `port` for serial/parallel,
 `lsl_stream_name` for LSL. A backend that cannot be opened stops the run
 before the experimenter screen, with the reason and the fix.
 
