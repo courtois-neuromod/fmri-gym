@@ -17,6 +17,13 @@ default one below and curriculum `keys` overrides) are ALWAYS Discrete action
 indices. Setting `env_kwargs.max_buttons_pressed` to 0 switches the env to a
 MultiBinary action space so several buttons can be pressed at once; the keymap
 is unchanged, we just OR the buttons of every held key (e.g. forward + turn).
+
+Sound is opt-in per curriculum: `env_kwargs.audio_buffer_enabled` puts one tic
+of stereo PCM in `obs["audio"]` (so a model sees the same observation a subject
+hears), which `sound()` hands to the session's speakers and `capture()` logs.
+Doom produces 1/35 s of sound per step whatever the frame rate, so audio only
+runs in real time when `fps * env_kwargs.frame_skip == 35`; below that it plays
+with gaps, above it lags further behind every frame.
 """
 
 from __future__ import annotations
@@ -28,7 +35,7 @@ import numpy as np
 import gymnasium as gym
 
 from .keyspec import KeySpec, MultiKeySpec, SingleKeySpec
-from .base import EnvAdapter, FrameState
+from .base import EnvAdapter, FrameState, Sound
 
 # Physical key -> preferred Doom button (first available for the scenario wins).
 # The gymnasium wrapper's Discrete action i presses the buttons set in
@@ -121,8 +128,13 @@ class VizDoomAdapter(EnvAdapter):
         from vizdoom import gymnasium_wrapper  # noqa: F401  (registers Vizdoom*-v1)
         env = gym.make(spec["game"], render_mode="rgb_array",
                         **spec.get("env_kwargs", {}))
-        env.unwrapped.game.set_audio_buffer_enabled(True)
-        self.has_audio = True
+        if env.unwrapped.game.is_audio_buffer_enabled():
+            # ViZDoom 1.3.0 ships an assert-enabled OpenAL Soft whose EFX
+            # (reverb) filter setup aborts with "gain > 0.00001f" the moment the
+            # audio buffer is on, segfaulting the process inside game.init().
+            # Doom's reverb only colours the buffer, so turn EFX off; the audio
+            # buffer itself still carries the real sound.
+            env.unwrapped.game.add_game_args("+snd_efx 0")
         return env
 
     def _keyspec(self) -> KeySpec:
@@ -131,15 +143,39 @@ class VizDoomAdapter(EnvAdapter):
     def render(self) -> np.ndarray:
         return np.asarray(self.env.render())
 
-    def get_audio_buffer(self) -> np.ndarray:
-        if self.env.unwrapped.state:
-            return self.env.unwrapped.state.audio_buffer
+    def sound(self) -> Sound | None:
+        """Return the frame's Doom audio, or ``None`` if there is none to play.
 
-    def get_audio_sampling_rate(self) -> int:
-        return self.env.unwrapped.game.get_audio_sampling_rate()
+        ``audio_buffer`` is ``None`` unless the curriculum turned the buffer on,
+        and ``state`` itself is ``None`` on a terminal frame -- the episode is
+        over, so there is nothing left to hear.
+
+        :return: one tic of stereo PCM at the scenario's rate, or ``None``.
+        """
+        state = self.env.unwrapped.state
+        if state is None or state.audio_buffer is None:
+            return None
+        return Sound(state.audio_buffer,
+                     self.env.unwrapped.game.get_audio_sampling_rate())
 
     def capture(self, obs: Any, info: dict, want_blob: bool = True) -> FrameState:
         variables = {}
         if isinstance(obs, dict) and "gamevariables" in obs:
             variables["gamevariables"] = np.asarray(obs["gamevariables"])
+        if isinstance(obs, dict) and "audio" in obs:
+            # What the subject heard this frame. Taken from obs, not sound(),
+            # because obs has a (zeroed) audio buffer on the terminal frame too,
+            # keeping this series the same length as actions and rewards.
+            variables["audio"] = np.asarray(obs["audio"])
         return FrameState(blob=None, variables=variables)
+
+    def block_extra(self) -> dict | None:
+        """Block-level arrays merged into the npz (the audio sample rate).
+
+        :return: ``{"audio_sampling_rate": Hz}`` when sound is on, else
+            ``None``. Without it the logged ``audio`` is not playable back.
+        """
+        game = self.env.unwrapped.game
+        if not game.is_audio_buffer_enabled():
+            return None
+        return {"audio_sampling_rate": game.get_audio_sampling_rate()}

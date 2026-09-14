@@ -1,4 +1,4 @@
-"""FrameState and the EnvAdapter base class."""
+"""FrameState, Sound, and the EnvAdapter base class."""
 
 from __future__ import annotations
 
@@ -25,6 +25,24 @@ class FrameState:
 
     blob: bytes | None = None
     variables: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Sound:
+    """One chunk of PCM an adapter wants played right now.
+
+    The audio counterpart of the RGB frame :meth:`EnvAdapter.render` returns:
+    the samples, plus the one thing an array cannot carry -- the rate they have
+    to be played at, which is engine-specific (44100 Hz for Doom, 31440 for the
+    ALE).
+
+    :ivar pcm: samples shaped ``(n_samples, n_channels)``; the dtype is the
+        sample format (``int16`` for most engines).
+    :ivar sample_rate: samples per second at which ``pcm`` must be played.
+    """
+
+    pcm: np.ndarray
+    sample_rate: int
 
 
 class EnvAdapter:
@@ -61,7 +79,6 @@ class EnvAdapter:
         :param spec: game-phase config dict from the curriculum (already
             validated for the keys this backend cares about).
         """
-        self.has_audio = False
         self.spec = spec
         self.env = self._make(spec)
         self.keyspec = self._keyspec()
@@ -150,6 +167,18 @@ class EnvAdapter:
         :return: RGB frame as a numpy array.
         """
         return self.env.render()
+
+    def sound(self) -> Sound | None:
+        """Return the sound to play for the current frame, or ``None``.
+
+        The audio counterpart of :meth:`render`: the loop calls it once per
+        frame and hands the result to the session's audio output, exactly as it
+        hands :meth:`render` to the display. Default is ``None`` -- a silent
+        backend, which is most of them.
+
+        :return: a :class:`Sound`, or ``None`` if there is nothing to play.
+        """
+        return None
 
     def close(self) -> None:
         """Close the underlying env if it exposes ``close()``.

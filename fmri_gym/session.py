@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING, Union
 import pygame
 
 from .adapters import get_adapter
+from .audio import Audio
 from .display import Display
-from .audio import SoundDeviceGameBlockStream
 from .keys import held_key_names, key_name
 from .logging import Logger
 
@@ -145,6 +145,7 @@ class Session:
         curriculum: list[dict],
         display: Display,
         outdir: str,
+        audio: Audio | None = None,
         dummy_trigger: bool = False,
     ) -> None:
         """Set up clock, logger, and phase dispatch for one subject.
@@ -153,11 +154,14 @@ class Session:
         :param curriculum: ordered list of phase dicts (``type``, timings, …).
         :param display: shared pygame display used by all phases.
         :param outdir: directory for the session manifest and game npz files.
+        :param audio: shared audio output used by all phases; one is created if
+            omitted, and stays silent unless an adapter returns sound.
         :param dummy_trigger: if ``True``, skip real experimenter/scanner waits.
         """
         self.subject = subject
         self.curriculum = curriculum
         self.display = display
+        self.audio = audio or Audio()
         self.dummy_trigger = dummy_trigger
         self.clock = Clock()
         self.logger = Logger(outdir, subject, curriculum, self.clock)
@@ -270,7 +274,7 @@ class Session:
     ) -> bool:
         """Run one episode, appending frame data to ``frames``.
 
-        :param adapter: wrapped env for reset/step/render/capture.
+        :param adapter: wrapped env for reset/step/render/sound/capture.
         :param frames: mutable frame-log dict; lists are appended in place.
         :param seed: RNG seed for this episode's ``reset``.
         :param episode_id: index of this episode within the game block.
@@ -288,16 +292,8 @@ class Session:
 
         ## Reset environment and show initial state
         obs, info = adapter.reset(seed)
-        if adapter.has_audio:
-            first_audio_buffer = adapter.get_audio_buffer()
-            self.audio_stream = SoundDeviceGameBlockStream(
-                adapter.get_audio_sampling_rate(),
-                first_audio_buffer.shape[0],
-                first_audio_buffer.shape[1],
-                dtype=first_audio_buffer.dtype,
-            )
-            self.audio_stream.play()
         self.display.draw_frame(adapter.render())
+        self.audio.play(adapter.sound())
 
         ## Loop over frames within episode
         while not (terminated or truncated) and time.perf_counter() < block_end:
@@ -320,8 +316,6 @@ class Session:
                 action = adapter.keyspec.resolve(held_key_names())
 
             obs, reward, terminated, truncated, info = adapter.step(action)
-            if adapter.has_audio:
-                self.audio_stream.put(adapter.get_audio_buffer())
             # Anchor a full savestate at episode start and every stride.
             save_blob = (ep_frame % state_stride == 0)
             ep_frame += 1
@@ -343,8 +337,7 @@ class Session:
                 frames["variables"][k].append(v)
 
             self.display.draw_frame(adapter.render())
-        if adapter.has_audio:
-            self.audio_stream.stop()
+            self.audio.play(adapter.sound())
         return False
 
     def _game(self, phase: dict, index: int) -> None:
@@ -405,6 +398,9 @@ class Session:
                 seed=base_seed + episode_id, episode_id=episode_id,
                 turn_based=turn_based, dt=dt, state_stride=state_stride,
                 block_end=block_end)
+            # An episode's last sounds are still queued when it ends; drop them
+            # so they do not play over the next episode or the next fixation.
+            self.audio.stop()
             episode_id += 1
             if mode == "episode" and episode_id >= n_episodes:
                 break

@@ -9,7 +9,7 @@ from __future__ import annotations
 from .adapters import get_adapter
 from .session import Session, Clock
 from .display import Display
-from .audio import SoundDeviceGameBlockStream
+from .audio import Audio
 from .logging import Logger
 
-__all__ = ["Session", "Clock", "Display", "Logger", "get_adapter"]
+__all__ = ["Session", "Clock", "Display", "Audio", "Logger", "get_adapter"]

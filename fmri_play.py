@@ -20,7 +20,7 @@ import json
 import os
 import time
 
-from fmri_gym import Display, Session
+from fmri_gym import Audio, Display, Session
 
 
 def build_demo_curriculum() -> list[dict]:
@@ -95,12 +95,14 @@ def main() -> None:
             phase.setdefault("repo", args.vgdl_repo)
 
     display = Display(size=(w, h), fullscreen=args.fullscreen)
+    audio = Audio()
     session = Session(args.subject, curriculum, display, outdir,
-                      dummy_trigger=args.dummy_trigger)
+                      audio=audio, dummy_trigger=args.dummy_trigger)
     try:
         session.run()
     finally:
         display.close()
+        audio.close()
 
 
 if __name__ == "__main__":

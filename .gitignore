@@ -9,6 +9,7 @@ __pycache__/
 
 # Stray logs written by backends / drivers into the working directory
 *.log
+_vizdoom.ini
 
 # Rush Hour: build-from-source Go engine (clone+build locally; see rushhour config _note)
 vendor/rush-hour-src/
