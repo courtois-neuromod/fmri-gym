@@ -138,14 +138,14 @@ class SyncSettings:
     delay: float = 0.0
 
     @classmethod
-    def from_dict(cls, d: dict | None) -> SyncSettings:
+    def from_dict(cls, d: dict) -> SyncSettings:
         """Build from the config section.
 
-        :param d: the ``sync`` dict, or ``None`` for the fMRI default.
+        :param d: the ``sync`` dict (empty for the fMRI default).
         :return: validated settings.
         :raises ValueError: on an unknown mode.
         """
-        s = cls(**(d or {}))
+        s = cls(**d)
         if s.mode not in SYNC_MODES:
             raise ValueError(f"triggers: unknown sync mode {s.mode!r}; "
                              f"expected one of {SYNC_MODES}")
@@ -184,7 +184,7 @@ class TriggerSettings:
             send on.
         """
         d = dict(d or {})
-        sync_d = d.pop("sync", None) or {}
+        sync_d = d.pop("sync", {})
         defaulted = tuple(key for key, given in (("sync.mode", "mode" in sync_d),
                                                  ("backend", "backend" in d)) if not given)
         sync = SyncSettings.from_dict(sync_d)

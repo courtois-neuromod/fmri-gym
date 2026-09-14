@@ -5,12 +5,11 @@ One experiment framework across backends: Atari (ALE), stable-retro consoles
 per game block in the curriculum; the experiment loop is identical for all.
 
 Usage:
-    python fmri_play.py --subject sub-01                        # built-in demo
     python fmri_play.py --subject sub-01 --curriculum my.json
-    python fmri_play.py --subject sub-01 --dummy-trigger        # testing
+    python fmri_play.py --subject sub-01 --curriculum my.json --dummy-trigger   # testing
 
 See configs/demo_mixed.json for a curriculum that mixes all three backends,
-and README.md for the curriculum schema.
+and README.md for the config schema.
 """
 
 from __future__ import annotations
@@ -24,60 +23,27 @@ import time
 from fmri_gym import Audio, Display, Session, Triggers
 
 
-def build_demo_curriculum() -> list[dict]:
-    """Mixed-backend demo: an Atari game, a retro game, and a survival game.
-
-    All three are forgiving, free-roaming games (no instant game-over), so a
-    first-time human can actually play them.
-    """
-    return [
-        {"type": "message", "text": "Pong (Atari)", "duration": 2.0},
-        {"type": "fixation", "duration": 2.0},
-        # Pong's paddle actions are RIGHT=2 / LEFT=3; remap them onto the
-        # up/down arrows, which read more naturally for a vertical paddle.
-        {"type": "game", "backend": "ale", "game": "ALE/Pong-v5", "mode": "duration",
-         "duration": 10.0, "fps": 30, "keys": {"UP": 2, "DOWN": 3}},
-
-        {"type": "message", "text": "Airstriker (Genesis)", "duration": 2.0},
-        {"type": "fixation", "duration": 2.0},
-        {"type": "game", "backend": "retro", "game": "Airstriker-Genesis-v0", "mode": "duration", "duration": 10.0, "fps": 60},
-
-        # Crafter: an open-world survival game. You wander freely (arrows move,
-        # SPACE interacts) with no instant death -- friendlier than CartPole,
-        # which topples in ~2 s. Needs `pip install crafter`.
-        {"type": "message", "text": "Crafter", "duration": 2.0},
-        {"type": "fixation", "duration": 2.0},
-        {"type": "game", "backend": "crafter", "game": "crafter", "mode": "episode",
-         "n_episodes": 1, "max_duration": 20.0, "fps": 15, "seed": 0},
-
-        {"type": "fixation", "duration": 4.0},
-        {"type": "survey", "questions": [
-            "I was fully absorbed in the games.",
-            "The games were too difficult.",
-        ]},
-    ]
-
-
 def load_config(path: str) -> dict:
-    """Load a config file: a bare curriculum list, or a dict with sections.
+    """Load a config file: a dict with ``"curriculum"`` and optional sections.
 
-    The dict form carries ``"curriculum"`` plus optional ``"triggers"`` (sync +
-    trigger codes; see :mod:`fmri_gym.triggers`). ``_``-prefixed keys are notes.
+    ``"triggers"`` is the start sync + trigger codes (:mod:`fmri_gym.triggers`);
+    ``_``-prefixed keys are notes. One shape only -- a bare list is refused.
 
     :param path: JSON file path.
-    :return: a dict with at least ``"curriculum"``.
+    :return: the config dict.
+    :raises ValueError: if the file is not a dict with a ``"curriculum"`` list.
     """
     with open(path) as f:
-        data = json.load(f)
-    if isinstance(data, dict):
-        return data
-    return {"curriculum": data}
+        config = json.load(f)
+    if not isinstance(config, dict) or not isinstance(config.get("curriculum"), list):
+        raise ValueError(f'{path}: expected a JSON object with a "curriculum" list')
+    return config
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Run any gym game as an fMRI task.")
     p.add_argument("--subject", default="sub-test")
-    p.add_argument("--curriculum")
+    p.add_argument("--curriculum", required=True, help="config JSON (see README)")
     p.add_argument("--outdir")
     p.add_argument("--size", default="1024x768")
     p.add_argument("--fullscreen", action="store_true")
@@ -90,8 +56,7 @@ def main() -> None:
                    help="path to the language_and_experience checkout (vgdl backend)")
     args = p.parse_args()
 
-    config = (load_config(args.curriculum) if args.curriculum
-              else {"curriculum": build_demo_curriculum()})
+    config = load_config(args.curriculum)
     curriculum = config["curriculum"]
     w, h = (int(x) for x in args.size.lower().split("x"))
     outdir = args.outdir or os.path.join(

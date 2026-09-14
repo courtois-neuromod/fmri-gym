@@ -38,7 +38,7 @@ With [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync --extra dbp                          # .venv/ with the nine DBP backends, pinned by uv.lock
-uv run fmri-play --subject sub-01 --dummy-trigger
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
 ```
 
 `dbp` is the nine DBP games. Each backend is also its own extra (`ale`,
@@ -50,7 +50,7 @@ Without uv: pip into a venv of your own, and `python fmri_play.py` in place of
 
 ```bash
 pip install -e ".[dbp]"            # private default index? add --index-url https://pypi.org/simple
-python fmri_play.py --subject sub-01 --dummy-trigger
+python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
 ```
 
 Atari ROMs ship with `ale-py`. For the `retro` backend you must supply and
@@ -61,9 +61,6 @@ for Rush Hour, [Running Rush-Hour](#running-rush-hour).
 ## Quick start
 
 ```bash
-# Built-in mixed demo: Pong, Airstriker, and Crafter, back to back
-uv run fmri-play --subject sub-01 --dummy-trigger
-
 # --- per-family demo curricula (all tested end-to-end; ~15 s per block) ---
 uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_atari.json    # 10 popular Atari games
 uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_classic.json  # all 5 classic-control
@@ -409,7 +406,7 @@ gym.make("ALE/Pong-v5").unwrapped.get_action_meanings()
  "keys": {"UP": 2, "DOWN": 3}}      // UP = paddle up, DOWN = paddle down; SPACE still serves (FIRE=1)
 ```
 
-`configs/dbp_games/atari__pong.json` and the built-in demo both use this mapping.
+`configs/dbp_games/atari__pong.json` and `configs/demo_mixed.json` both use this mapping.
 CartPole similarly uses `{"LEFT": 0, "RIGHT": 1}`.
 
 ## Triggers: fMRI vs MEG/EEG

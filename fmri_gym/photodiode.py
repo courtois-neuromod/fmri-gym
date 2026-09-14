@@ -249,9 +249,8 @@ def _trigger_settings(args: argparse.Namespace) -> TriggerSettings:
     section: dict = {}
     if args.config:
         with open(args.config) as f:
-            data = json.load(f)
-        if isinstance(data, dict):
-            section = dict(data.get("triggers") or {})
+            section = dict(json.load(f).get("triggers", {}))
+        section.pop("sync", None)     # the calibration has no run start to sync
     if args.trigger_backend:
         section["backend"] = args.trigger_backend
     if args.trigger_port:
@@ -296,16 +295,13 @@ def main() -> None:
     display = Display((w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync)
     recorder = None
     if args.audio:
-        try:
-            device = args.audio_device
-            if (device or "").isdigit():
-                device = int(device)
-            recorder = AudioRecorder(device, args.samplerate)
-            recorder.start()
-        except Exception as exc:  # noqa: BLE001 -- run the flashes anyway
-            print(f"photodiode: audio input unavailable ({exc}); recording flips only",
-                  file=sys.stderr)
-            recorder = None
+        # Asked for the audio readout: if the input cannot open, stop here
+        # rather than flash for a minute and report "no edges found".
+        device = args.audio_device
+        if (device or "").isdigit():
+            device = int(device)
+        recorder = AudioRecorder(device, args.samplerate)
+        recorder.start()
     summary: dict[str, Any] = {"display": display.describe(), "triggers": triggers.describe(),
                                "n": args.n, "on_ms": args.on_ms, "gap_ms": list(args.gap_ms),
                                "corner": args.corner, "patch_px": args.patch_px}
