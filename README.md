@@ -292,6 +292,7 @@ fmri_gym/
   display.py        # pygame: fixed window, aspect-fit frame, fixation, text; vsync-locked flip + call_on_flip
   logging.py        # manifest.json + one compressed .npz per game block
   triggers.py       # run-start sync (wait/send/none) + MEG/EEG marker codes over lsl/serial/parallel
+  photodiode.py     # `python -m fmri_gym.photodiode`: flash a patch to measure the flip-to-photon offset
   adapters/
     base.py         # EnvAdapter + KeySpec flavors + FrameState (the seam)
     ale.py          # clone_state, getRAM, lossless indexed pixels
@@ -458,6 +459,19 @@ actually obtained (`vsync`, measured at start-up; `refresh_rate`).
   `python -m fmri_gym.display --fullscreen` (verdict LOCKED / NOT locked; if
   not, use fullscreen and disable the desktop compositor). `--no-vsync` turns
   the request off.
+- Once per rig, measure the constant flip-to-photon offset with a photodiode on
+  the screen, then subtract it from `flip_time` and the frame markers:
+
+  ```bash
+  python -m fmri_gym.photodiode --fullscreen --config configs/demo_meg.json   # diode into the MEG/EEG amp
+  python -m fmri_gym.photodiode --fullscreen --audio                          # diode into this PC's sound card
+  ```
+
+  The first flashes a patch with the frame marker on each white flip; match
+  the markers to the diode edges in your recording with
+  `fmri_gym.photodiode.match_edges(marker_times, edge_times)`. The second
+  records the diode on the sound-card input and prints the offsets itself
+  (`--list-audio-devices` to pick the input).
 
 ## Output & data format
 
@@ -554,7 +568,10 @@ resolving data dirs relative to `__file__`. Result: VGDL runs under gymnasium
       `numpy<2` env; code path exists but is untested end-to-end.
 - [x] **LSL / serial / parallel-port markers** and a send-mode start signal
       for MEG/EEG (`"triggers"` section) -- done.
-- [ ] **Photodiode sync square** for display-latency measurement.
+- [x] **Photodiode calibration task** (`python -m fmri_gym.photodiode`) to measure
+      the flip-to-photon offset of a rig -- done; an always-on sync square in
+      the corner of every frame remains an option if a lab wants per-frame
+      verification.
 - [ ] **retro `.bk2` movie logging** as an alternative to per-frame states
       (frame-exact, tiny).
 - [ ] Per-subject deterministic curriculum generation; multi-run structure with
