@@ -7,6 +7,7 @@ per game block in the curriculum; the experiment loop is identical for all.
 Usage:
     python fmri_play.py --subject sub-01 --curriculum my.json
     python fmri_play.py --subject sub-01 --curriculum my.json --dummy-trigger   # testing
+    python fmri_play.py --subject sub-01 --curriculum my.json --no-audio        # mute all games
 
 See configs/demo_mixed.json for a curriculum that mixes all three backends,
 and README.md for the config schema.
@@ -50,6 +51,7 @@ def main() -> None:
     p.add_argument("--no-vsync", action="store_true",
                    help="do not lock flips to the monitor refresh (default: try to)")
     p.add_argument("--dummy-trigger", action="store_true")
+    p.add_argument("--no-audio", action="store_true", help="Disable game audio for this session.")
     p.add_argument("--save-pixels", action="store_true",
                    help="ALE only: also store lossless pixels (large; warns).")
     p.add_argument("--vgdl-repo", default=os.environ.get("VGDL_REPO"),
@@ -67,6 +69,8 @@ def main() -> None:
     for phase in curriculum:
         if phase.get("type") != "game":
             continue
+        if args.no_audio:
+            phase["audio"] = False
         backend = phase.get("backend", "gym")
         if backend == "ale" and args.save_pixels:
             phase.setdefault("save_pixels", True)

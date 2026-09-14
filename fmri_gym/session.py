@@ -16,7 +16,7 @@ from __future__ import annotations
 import sys
 import time
 from collections import defaultdict
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -150,7 +150,7 @@ def _wait_for_char(display: Display, char: str, dummy_trigger: bool = False) -> 
         display.idle(time.perf_counter() + 0.005, poll=0.005)
 
 
-def _join_multiline_text(text: Union[str, list, tuple]) -> str:
+def _join_multiline_text(text: str | list | tuple) -> str:
     """Normalize message ``text`` to a single string.
 
     Accepts a plain string or a list/tuple of lines (joined with ``\\n``), so
@@ -348,12 +348,17 @@ class Session:
         next_t = time.perf_counter()
         key_to_action = adapter.keyspec.key_to_action_map() if turn_based else None
         key_log = frames["key_events"]
+        play_sound = bool(adapter.spec.get("audio", True))
 
         ## Reset environment and show initial state
         obs, info = adapter.reset(seed)
         self.display.call_on_flip(self.triggers.episode_start)
         self.display.draw_frame(adapter.render())
-        self.audio.play(adapter.sound())
+        sound = adapter.sound() if play_sound else None
+        self.audio.play(sound)
+        if sound is not None:
+            # Device startup must not turn into a burst of catch-up audio.
+            next_t = time.perf_counter()
 
         ## Loop over frames within episode
         while not (terminated or truncated) and time.perf_counter() < block_end:
@@ -380,7 +385,8 @@ class Session:
             # The frame trigger goes out on the flip that shows this frame.
             self.display.call_on_flip(self.triggers.frame)
             flip_t = self.display.draw_frame(adapter.render())
-            self.audio.play(adapter.sound())
+            if play_sound:
+                self.audio.play(adapter.sound())
 
             # Prefer env_action when an adapter translates UI meta-keys into a
             # different logged action (e.g. Rush Hour select+move -> Discrete).
@@ -454,14 +460,15 @@ class Session:
         ## Loop over episodes within game block
         while not user_quit and time.perf_counter() < block_end:
             ## Run one episode
-            user_quit = self._episode(
-                adapter, frames,
-                seed=base_seed + episode_id, episode_id=episode_id,
-                turn_based=turn_based, dt=dt, state_stride=state_stride,
-                block_end=block_end)
-            # An episode's last sounds are still queued when it ends; drop them
-            # so they do not play over the next episode or the next fixation.
-            self.audio.stop()
+            try:
+                user_quit = self._episode(
+                    adapter, frames,
+                    seed=base_seed + episode_id, episode_id=episode_id,
+                    turn_based=turn_based, dt=dt, state_stride=state_stride,
+                    block_end=block_end)
+            finally:
+                # Drop pending audio on completion, ESC, or an engine failure.
+                self.audio.stop()
             episode_id += 1
             if mode == "episode" and episode_id >= n_episodes:
                 break
@@ -507,9 +514,12 @@ class Session:
         except KeyboardInterrupt:
             print("Interrupted -- saving partial data.", file=sys.stderr)
         finally:
-            if self.clock.t0_perf is not None:
-                self.triggers.lifecycle("task_stop")
-            self.logger.set_extra("triggers", self.triggers.describe(self.clock))
-            manifest_path = self.logger.save_manifest()
-            print(f"Saved session to: {self.outdir}")
-            print(f"Manifest: {manifest_path}")
+            try:
+                self.audio.stop()
+            finally:
+                if self.clock.t0_perf is not None:
+                    self.triggers.lifecycle("task_stop")
+                self.logger.set_extra("triggers", self.triggers.describe(self.clock))
+                manifest_path = self.logger.save_manifest()
+                print(f"Saved session to: {self.outdir}")
+                print(f"Manifest: {manifest_path}")
