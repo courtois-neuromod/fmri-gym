@@ -74,10 +74,10 @@ class Codes:
     """The trigger code scheme; see the module docstring for the bit layout."""
 
     frame_bits: int = 3
-    task_start: int = 8
-    task_stop: int = 16
-    episode_start: int = 32
-    scanner_start: int = 64
+    task_start: int = 1 << 3
+    task_stop: int = 1 << 4
+    episode_start: int = 1 << 5
+    scanner_start: int = 1 << 6
 
     @property
     def frame_mask(self) -> int:
