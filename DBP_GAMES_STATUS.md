@@ -1,7 +1,7 @@
 # DBP games — fmri-gym integration status
 
 Status of every game in the DBP survey that exposes a **Gymnasium** API (15
-games), after installing each in the `fmri-gym` conda env and actually running
+games), after installing each in the `fmri-gym` env and actually running
 it through the framework. One demo curriculum per game lives in
 `configs/dbp_games/<name>.json`; each carries a matching `_status` / `_verified` /
 `_note`.
@@ -114,7 +114,7 @@ that program's whole self-paced session.
 
 ## Environment notes
 
-All backends were verified to run **together in one `fmri-gym` conda env**
+All backends were verified to run **together in one `fmri-gym` env**
 despite third-party pins:
 
 - `minihack` pins **gymnasium == 1.2**

@@ -34,30 +34,24 @@ through small pluggable **adapters**:
 
 ## Install
 
-Everything coexists in one conda env (verified: ALE + stable-retro + plain gym
-all import and run in the same process).
+With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-conda create -n fmri-gym python=3.11
-conda activate fmri-gym
-pip install -r requirements.txt
+uv sync --extra dbp                          # .venv/ with the nine DBP backends, pinned by uv.lock
+uv run fmri-play --subject sub-01 --dummy-trigger
 ```
 
-The project is also a standard `pyproject.toml` package with **one extra per
-backend** (`ale`, `retro`, `vizdoom`, `minihack`, `rushhour`, …), a `dbp` extra
-for the nine DBP picks, and `all`. Use whichever tool you prefer:
+`dbp` is the nine DBP games. Each backend is also its own extra (`ale`,
+`retro`, `vizdoom`, `minihack`, `rushhour`, …), and `--extra all` installs
+every backend.
+
+Without uv: pip into a venv of your own, and `python fmri_play.py` in place of
+`fmri-play`:
 
 ```bash
-pip install -e ".[dbp]"            # any venv / conda env; add extras as needed
-uv sync --extra dbp                # uv: creates .venv/ from the committed uv.lock
-uv run fmri-play --subject sub-01 --dummy-trigger     # `fmri-play` == fmri_play.py
+pip install -e ".[dbp]"            # private default index? add --index-url https://pypi.org/simple
+python fmri_play.py --subject sub-01 --dummy-trigger
 ```
-
-`uv.lock` pins the exact versions a session ran with; `uv lock --upgrade`
-refreshes it deliberately.
-
-> If your default pip index is a private registry, add
-> `--index-url https://pypi.org/simple`.
 
 Atari ROMs ship with `ale-py`. For the `retro` backend you must supply and
 import game ROMs once — see [Running stable-retro games](#running-stable-retro-games).
@@ -68,27 +62,27 @@ for Rush Hour, [Running Rush-Hour](#running-rush-hour).
 
 ```bash
 # Built-in mixed demo: Pong, Airstriker, and Crafter, back to back
-python fmri_play.py --subject sub-01 --dummy-trigger
+uv run fmri-play --subject sub-01 --dummy-trigger
 
 # --- per-family demo curricula (all tested end-to-end; ~15 s per block) ---
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/demo_atari.json    # 10 popular Atari games
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/demo_classic.json  # all 5 classic-control
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/demo_text.json     # all 5 toy_text (render RGB; turn-based, arrow keys)
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/demo_box2d.json     # LunarLander, BipedalWalker, CarRacing  (pip install swig box2d-py)
-MUJOCO_GL=egl python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/demo_mujoco.json   # 10 MuJoCo tasks  (pip install "gymnasium[mujoco]")
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/demo_aigamestore.json  # 10 AI GameStore p5.js games (pip install playwright; see below)
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_atari.json    # 10 popular Atari games
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_classic.json  # all 5 classic-control
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_text.json     # all 5 toy_text (render RGB; turn-based, arrow keys)
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_box2d.json     # LunarLander, BipedalWalker, CarRacing  (`box2d` extra)
+MUJOCO_GL=egl uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_mujoco.json   # 10 MuJoCo tasks  (`mujoco` extra)
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_aigamestore.json  # 10 AI GameStore p5.js games (`aigamestore` extra; see below)
 VGDL_REPO=../language_and_experience PYTHONPATH=../language_and_experience \
-  python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/demo_vgdl_all.json   # all 10 VGDL games (see below)
+  uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_vgdl_all.json   # all 10 VGDL games (see below)
 
 # demo_mixed spans EVERY backend in one session (Pong/ale, Airstriker/retro,
 # Crafter, MiniHack, Aliens/vgdl, MountainCar/classic, FrozenLake/toy_text,
 # CarRacing/box2d, WaterSort/aigamestore) -- needs the VGDL repo + box2d-py +
 # crafter + minihack + playwright:
 VGDL_REPO=../language_and_experience PYTHONPATH=../language_and_experience \
-  python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/demo_mixed.json
+  uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_mixed.json
 
 # Play ONE game on its own, for a long stretch (see configs/dbp_games/):
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
 ```
 
 Drop `--dummy-trigger` for a real session (then press SPACE, then wait for the
@@ -106,9 +100,9 @@ the DBP game spreadsheet, so you can play any single game on its own for a long
 stretch with a one-line command. Filenames are `<class>__<game>.json`:
 
 ```bash
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/text__frozenlake.json
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/aigamestore__game1.json
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/text__frozenlake.json
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/aigamestore__game1.json
 ```
 
 Each is a minimal `message → fixation → game (300 s) → fixation` curriculum with
@@ -195,7 +189,7 @@ confirm the integration name.
 
 The `vgdl` backend drives the VGDL games from a gymnasium-ported fork:
 **[tomov/language_and_experience @ dbp](https://github.com/tomov/language_and_experience/tree/dbp)**.
-Because it runs under gymnasium + numpy 2, no separate conda env is needed — the
+Because it runs under gymnasium + numpy 2, no separate env is needed — the
 same `fmri-gym` env works.
 
 1. Clone the fork (the `dbp` branch has the gymnasium port) **as an adjacent
@@ -211,7 +205,7 @@ same `fmri-gym` env works.
    ```bash
    VGDL_REPO=../language_and_experience \
    PYTHONPATH=../language_and_experience \
-     python fmri_play.py --subject sub-01 --curriculum configs/demo_vgdl_all.json
+     uv run fmri-play --subject sub-01 --curriculum configs/demo_vgdl_all.json
    ```
 
    `VGDL_REPO` locates the game/level/sprite files; a phase can also override it
@@ -240,10 +234,11 @@ p5.js↔Gymnasium bridge, so the `aigamestore` backend builds one with a headles
   (START / PLAYING / GAMEOVER …), mapped to reward (score delta) and done, and
   logged (scalar fields as `state_*` analysis variables).
 
-Setup — needs Playwright and a browser (uses the **system Chrome** by default):
+Setup — the `aigamestore` extra (Playwright + Pillow) and a browser (uses the
+**system Chrome** by default):
 
 ```bash
-pip install playwright pillow
+uv sync --extra aigamestore        # or: pip install -e ".[aigamestore]"
 # then either rely on system Chrome (default), or install the bundled one:
 # playwright install chromium   # and set "browser_channel": null in the phase
 ```
@@ -252,7 +247,7 @@ Run the 10 vendored public games (each keyboard-controlled — arrows + SPACE/Z/
 ENTER; `game1` = Water Sort, `game2` ≈ Angry Birds, …):
 
 ```bash
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/demo_aigamestore.json
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_aigamestore.json
 ```
 
 Phase fields: `game` (`"game1"`…`"game10"`, or an `http(s)://…/index.html`
@@ -275,15 +270,15 @@ its results columns in `info` — so the adapter is a keymap plus the fields to
 log. One game phase is one puzzle (`"puzzle": "p07"`); the program's ready
 screens, blank intervals and solved feedback are `message` phases the
 curriculum lists around each puzzle, so every puzzle is its own block in the
-manifest and its own `.npz`. Nothing to install beyond `requirements.txt`: on first use the
+manifest and its own `.npz`. Nothing to install beyond the `rushhour` extra: on first use the
 package downloads the engine of its matching release into
 `~/.cache/rushhour-gym/` (checksum-verified; Linux x86-64, macOS arm64, Windows
 x86-64). On a machine without network, run a config once while online or copy
 that directory; `RUSHHOUR_ENV_BIN` names a binary of your own.
 
 ```bash
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__complete.json   # the program's session then the rest of the library: 49 puzzles, one block each
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__complete.json   # the program's session then the rest of the library: 49 puzzles, one block each
 ```
 
 Controls, phase fields and the logged columns are documented in the configs'
