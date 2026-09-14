@@ -6,21 +6,14 @@ one-liner. For design notes, adapters, and logging details see [README.md](READM
 ## 1. Install
 
 ```bash
-conda create -n fmri-gym python=3.11
-conda activate fmri-gym
-pip install -r requirements.txt
+uv sync --extra dbp
 ```
 
-`requirements.txt` already pulls in the common backends (crafter, minihack,
-vizdoom, playwright, pystk2-gymnasium, rushhour-gym, …). One game needs an
-extra step:
+That installs every game below into `.venv/`; `uv run fmri-play ...` then
+plays one. Without [uv](https://docs.astral.sh/uv/): `pip install -e ".[dbp]"`
+in a venv of your own, and `python fmri_play.py` in place of `fmri-play`.
 
-```bash
-# Baba is AI
-pip install "git+https://github.com/nacloos/baba-is-ai.git"
-```
-
-Rush Hour needs none: `rushhour-gym` comes from PyPI, and on first use it
+Rush Hour needs no extra step: `rushhour-gym` comes from PyPI, and on first use it
 downloads the matching `rushhour-env` engine from the Rush-Hour
 GitHub release into `~/.cache/rushhour-gym/` (checksum-verified; Linux x86-64,
 macOS arm64, Windows x86-64). On an offline scanner PC, run any Rush Hour
@@ -33,7 +26,7 @@ the checkout and point at its engine, which the adapter then uses:
 
 ```bash
 RH=/path/to/Rush-Hour
-pip install -e "$RH/python"
+uv pip install -e "$RH/python"    # or pip install -e, in the same env
 (cd "$RH" && go build -o rushhour-env ./cmd/rushhour-env)
 export RUSHHOUR_ENV_BIN="$RH/rushhour-env"
 ```
@@ -51,7 +44,7 @@ playwright install chromium   # then set "browser_channel": null in the phase if
 ## 2. How a session works
 
 ```bash
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/<game>.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/<game>.json
 ```
 
 | Flag / key | What it does |
@@ -73,8 +66,8 @@ All commands assume you're in the repo root with `fmri-gym` activated.
 ### ViZDoom
 
 ```bash
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/vizdoom__defend_center.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/vizdoom__deadly_corridor.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__defend_center.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__deadly_corridor.json
 ```
 
 Controls: arrows move/turn, Z/X strafe, SPACE shoots.
@@ -82,14 +75,14 @@ Controls: arrows move/turn, Z/X strafe, SPACE shoots.
 ### Crafter
 
 ```bash
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/crafter__crafter.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/crafter__crafter.json
 ```
 
 ### Rush Hour
 
 ```bash
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/rushhour__complete.json    # Rush-Hour's own session: 12 puzzles, easiest first, self-paced
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/rushhour__complete.json    # Rush-Hour's own session: 12 puzzles, easiest first, self-paced
 ```
 
 `rushhour__complete.json` is the Rush-Hour program's own session (ready screen
@@ -100,22 +93,22 @@ The engine binary is fetched on first run (see §1); nothing to build.
 ### Baba is AI
 
 ```bash
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/baba__make_win.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/baba__make_win.json
 ```
 
 ### AI GameStore (p5.js browser games)
 
 ```bash
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/aigamestore__game1.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/aigamestore__game2.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/aigamestore__game3.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/aigamestore__game4.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/aigamestore__game5.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/aigamestore__game6.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/aigamestore__game7.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/aigamestore__game8.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/aigamestore__game9.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/aigamestore__game10.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/aigamestore__game1.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/aigamestore__game2.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/aigamestore__game3.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/aigamestore__game4.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/aigamestore__game5.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/aigamestore__game6.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/aigamestore__game7.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/aigamestore__game8.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/aigamestore__game9.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/aigamestore__game10.json
 ```
 
 Controls: arrows + SPACE / Z / ENTER (game-dependent). Needs Playwright + Chrome (§1).
@@ -123,21 +116,21 @@ Controls: arrows + SPACE / Z / ENTER (game-dependent). Needs Playwright + Chrome
 ### MiniHack
 
 ```bash
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/minihack.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/minihack__room5x5.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/minihack__room15x15.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/minihack__mazewalk9x9.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/minihack__river.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/minihack__corridor.json
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/minihack__eat.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/minihack.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/minihack__room5x5.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/minihack__room15x15.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/minihack__mazewalk9x9.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/minihack__river.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/minihack__corridor.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/minihack__eat.json
 ```
 
-Controls: arrow keys (N/E/S/W). Needs `setuptools<81` (already in `requirements.txt`).
+Controls: arrow keys (N/E/S/W). Needs `setuptools<81` (already a core dependency).
 
 ### SuperTuxKart
 
 ```bash
-python fmri_play.py --subject sub-01 --curriculum configs/dbp_games/supertuxkart__race.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/supertuxkart__race.json
 ```
 
 Needs a real GL display (does **not** work under `SDL_VIDEODRIVER=dummy`).

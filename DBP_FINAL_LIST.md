@@ -37,10 +37,10 @@ Each was verified to render a real frame (PNG spot-checks for the SuperTuxKart
    needs a real GL context (works on `DISPLAY=:1`, **not** under headless
    `SDL_VIDEODRIVER=dummy`). Fine for the fMRI presentation machine.
 
-3. **Rush Hour needs a Go build.** Installed Go (conda-forge), built its
-   `rushhour-env` binary; the adapter auto-finds `vendor/rush-hour-src/rushhour-env`
-   (or `RUSHHOUR_ENV_BIN`). The Go source is gitignored (build-from-source dep;
-   the config `_note` has the clone+build commands).
+3. **Rush Hour brings its own Go engine.** `rushhour-gym` (PyPI, the `rushhour`
+   extra) downloads the matching `rushhour-env` binary into
+   `~/.cache/rushhour-gym/` on first use; `RUSHHOUR_ENV_BIN` points at a build
+   of your own (see README "Running Rush-Hour").
 
 4. **Craftium** pins `gymnasium 0.29` but runs fine on 1.2, so it stays in the
    one shared env via the `gym` backend + `import_module=craftium` (no new
@@ -55,9 +55,9 @@ Each was verified to render a real frame (PNG spot-checks for the SuperTuxKart
 
 ## Dependency reality
 
-Everything above coexists in **one** `fmri-gym` conda env (gymnasium 1.2,
+Everything above coexists in **one** `fmri-gym` env (gymnasium 1.2,
 numpy 1.26, setuptools<81; `vizdoom` brings pygame-ce). The only true conflicts
 were COOM (gymnasium 0.28) and, nominally, craftium (0.29 pin — but runs on
-1.2). Non-PyPI installs: `baba` (GitHub), `rushhour` (GitHub + Go build),
-`craftium` (release wheel). See `requirements.txt` for the full list and the
-per-config `_note` fields for game-specific setup.
+1.2). Non-PyPI installs: `baba` (GitHub, pulled by the `baba` extra) and
+`craftium` (release wheel). See the extras in `pyproject.toml` for the full
+list and the per-config `_note` fields for game-specific setup.

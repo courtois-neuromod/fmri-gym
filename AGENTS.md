@@ -85,14 +85,15 @@ Before editing `session.py`, `display.py`, `keys.py`, `logging.py`, `base.py`, o
 2. `fmri_gym/adapters/__init__.py` — one `if backend == ...:` branch with a lazy import.
 3. `configs/dbp_games/<BACKEND>__<GAME>.json` — a runnable curriculum, with a `_note`
    field for any install step that isn't a plain `pip install`.
-4. `requirements.txt` — one commented line, in the "Backends" block.
+4. `pyproject.toml` — one extra under `[project.optional-dependencies]` (and a
+   mention in `dbp` / `all` if it belongs there), then `uv lock` to refresh `uv.lock`.
 5. `README.md` — only if the backend needs setup beyond `pip install` (a repo checkout, a
    binary, an env var).
 
 Then check your work by actually running it:
 
 ```bash
-python fmri_play.py --subject sub-test --dummy-trigger \
+uv run fmri-play --subject sub-test --dummy-trigger \
     --curriculum configs/dbp_games/<BACKEND>__<GAME>.json
 ruff check fmri_gym fmri_play.py
 ```

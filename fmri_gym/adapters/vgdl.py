@@ -3,7 +3,7 @@
 Wraps the VGDLEnv from ccolas/language_and_experience behind the standard
 EnvAdapter interface. The VGDL source has been ported from old gym to
 gymnasium (see that repo's `dbp` branch), so it runs in the SAME numpy-2 env as
-the ale/retro/gym backends -- no separate conda env needed. Point the adapter
+the ale/retro/gym backends -- no separate env needed. Point the adapter
 at the checkout via the phase "repo" field or the VGDL_REPO env var, and add it
 to PYTHONPATH so `src.vgdl...` is importable.
 
