@@ -13,7 +13,7 @@ class KeySpec(ABC):
 
     Subclasses differ only in how they turn the matching combos into one
     action: :class:`SingleKeySpec` picks one, :class:`MultiKeySpec` ORs button
-    vectors, :class:`PassthroughKeySpec` joins the held key names.
+    vectors, :class:`PassthroughKeySpec` joins their names.
 
     :ivar combos: maps a frozenset of pressed key NAMES (pygame key names
         without the "K_" prefix, upper-case: "LEFT", "SPACE", "Z", ...) to the
@@ -140,23 +140,31 @@ class MultiKeySpec(KeySpec):
 
 @dataclass
 class PassthroughKeySpec(KeySpec):
-    """Pass the held keys through: the env itself interprets the key set.
+    """Name the engine inputs to apply: the env itself interprets the names.
 
     For backends with no action space to index into, where ``step()`` turns the
-    keys into engine input (browser games press/release them for real;
-    supertuxkart assembles a steer/accelerate/brake action struct). ``combos``
-    is a whitelist of meaningful keys; the action is a "+"-joined, sorted key
-    string, which logs cleanly to npz ("" == nothing held).
+    named inputs into engine input (browser games press the corresponding
+    keyboard keys for real; supertuxkart assembles a steer/accelerate/brake
+    action struct). Combo values are input NAMES, so the adapter defaults are
+    usually identity (``{"SPACE"} -> "SPACE"``) while a curriculum keymap can
+    point any physical key at any input (``{"B3"} -> "SPACE"``) -- which is what
+    lets a scanner button box drive a game built around a keyboard.
+
+    The action is those names, sorted and "+"-joined, which logs cleanly to npz
+    ("" == nothing held).
     """
 
     def resolve(self, held: frozenset[str]) -> str:
-        """Return the held keys that this game knows about, "+"-joined.
+        """Return the matching combos' input names, "+"-joined.
 
         :param held: frozenset of currently pressed key NAMES.
-        :return: sorted key names joined with "+", or ``""`` if none are held.
+        :return: sorted input names joined with "+", or ``noop`` if no combo
+            matches.
         """
-        known = {key for keys in self.combos for key in keys}
-        return "+".join(sorted(held & known))
+        matches = self.maximal(held)
+        if not matches:
+            return self.noop
+        return "+".join(sorted(str(self.combos[keys]) for keys in matches))
 
     def _combos_for_overrides(self) -> dict[frozenset[str], Any]:
         """Curriculum keys replace the adapter whitelist entirely.

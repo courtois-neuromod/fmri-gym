@@ -1,7 +1,7 @@
 {
   "_game": "AI GameStore game4 (jetpack runner)",
   "_note": "pip install playwright (uses system Chrome by default).",
-  "_keys_note": "PassthroughKeySpec: curriculum 'keys' whitelist physical keys forwarded into the page (values are identity; the action is the held set, '+'-joined). Hold SPACE or UP to thrust / fly; avoid zappers and missiles. Keep the message Controls text in sync with 'keys' by hand.",
+  "_keys_note": "PassthroughKeySpec: curriculum 'keys' map a physical key (the JSON key -- a scanner button, say) to the key the GAME listens for (the value, e.g. 'SPACE'); the action is the held set of game keys, '+'-joined. Hold SPACE or UP to thrust / fly; avoid zappers and missiles. Keep the message Controls text in sync with 'keys' by hand -- the canvas paints the game's own key names, so name the button standing in for each.",
   "_keys_reference": "https://github.com/tomov/fmri-gym/blob/main/vendor/aigamestore/game4/input.js",
   "curriculum": [
     {

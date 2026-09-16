@@ -61,10 +61,11 @@ class SuperTuxKartAdapter(EnvAdapter):
         )
 
     def _keyspec(self) -> PassthroughKeySpec:
-        # The action is assembled from the held-key set in step(); the combos
-        # here just declare which keys are meaningful (resolve returns the set).
-        keys = ["LEFT", "RIGHT", "UP", "DOWN", "SPACE", "Z", "X"]
-        combos = {frozenset([k]): k for k in keys}
+        # step() assembles the Dict action from the names resolve() returns, so
+        # the combo VALUES are the race controls and a curriculum keymap can
+        # point any physical key at any of them ({"B1"} -> "UP" to accelerate).
+        controls = ["LEFT", "RIGHT", "UP", "DOWN", "SPACE", "Z", "X"]
+        combos = {frozenset([c]): c for c in controls}
         return PassthroughKeySpec(combos=combos, noop="")
 
     def step(self, action: Any) -> tuple[Any, float, bool, bool, dict]:

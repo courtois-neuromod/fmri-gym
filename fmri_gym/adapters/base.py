@@ -105,7 +105,8 @@ class EnvAdapter:
 
         :return: a concrete :class:`KeySpec` -- :class:`SingleKeySpec` for a
             ``Discrete`` space, :class:`MultiKeySpec` when held keys should
-            combine, :class:`PassthroughKeySpec` when ``step`` takes the key set.
+            combine, :class:`PassthroughKeySpec` when ``step`` takes the names
+            of the engine inputs to apply.
         :raises NotImplementedError: always in the base class.
         """
         raise NotImplementedError

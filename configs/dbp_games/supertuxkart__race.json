@@ -1,7 +1,7 @@
 {
   "_game": "SuperTuxKart (sports/racing)",
   "_note": "pip install pystk2-gymnasium (brings pysupertuxkart2). Uses its supertuxkart/full-v0 gym env; the 3D scene is grabbed from the in-process race, so it needs a REAL GL context (a display or Xvfb+GLX) and does NOT work under SDL_VIDEODRIVER=dummy.",
-  "_keys_note": "PassthroughKeySpec: curriculum 'keys' whitelist the physical keys forwarded into the race (values are identity; the action is the held set, which step() turns into the env's Dict action: accelerate/brake/steer/fire/drift/nitro). Keep the message Controls text in sync with 'keys' by hand.",
+  "_keys_note": "PassthroughKeySpec: curriculum 'keys' map a physical key (the JSON key -- a scanner button, say) to a race control (the value: UP/DOWN/LEFT/RIGHT/SPACE/Z/X), which step() turns into the env's Dict action: accelerate/brake/steer/fire/drift/nitro. Keep the message Controls text in sync with 'keys' by hand.",
   "_keys_reference": "https://github.com/bpiwowar/pystk2-gymnasium",
   "curriculum": [
     {
