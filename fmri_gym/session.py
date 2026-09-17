@@ -211,6 +211,7 @@ class Session:
         self.logger = Logger(outdir, subject, curriculum, self.clock)
         self.logger.set_extra("display", display.describe())
         self.logger.set_extra("dummy_trigger", dummy_trigger)
+        self.logger.set_extra("audio", self.audio.describe())
         self.outdir = outdir
         self.triggers = triggers or Triggers.from_config(None)
         self.sync = self.triggers.sync
@@ -227,7 +228,8 @@ class Session:
         self.display.draw_text(
             "Please keep your head as still as possible.\n\n"
             "(experimenter: press SPACE when ready)\n\n"
-            f"triggers: {self.triggers.status()}")
+            f"triggers: {self.triggers.status()}\n"
+            f"audio: {self.audio.status()}")
         _wait_for_char(self.display, EXPERIMENTER_KEY, dummy_trigger=self.dummy_trigger)
         if self.sync.mode == "wait":
             self.display.draw_text("Waiting for scanner...")
@@ -348,19 +350,17 @@ class Session:
         frames["episode_seeds"].append(seed)
         terminated = truncated = False
         ep_frame = 0
-        next_t = time.perf_counter()
         key_to_action = adapter.keyspec.key_to_action_map() if turn_based else None
         key_log = frames["key_events"]
 
         ## Reset environment and show initial state
         obs, info = adapter.reset(seed)
         self.display.call_on_flip(self.triggers.episode_start)
-        self.display.draw_frame(adapter.render())
-        sound = adapter.sound() if play_sound else None
-        self.audio.play(sound)
-        if sound is not None:
-            # Device startup must not turn into a burst of catch-up audio.
-            next_t = time.perf_counter()
+        # The first frame stays up for one frame period like every other, paced
+        # from its flip, so a slow reset does not turn into a burst of catch-up
+        # frames. Its sound is not played: it is whatever the reset produced,
+        # not a step, and it would start the episode's sound off its flips.
+        next_t = self._show(adapter, play_sound=False) + dt
 
         ## Loop over frames within episode
         while not (terminated or truncated) and time.perf_counter() < block_end:
@@ -386,9 +386,7 @@ class Session:
             fs = adapter.capture(obs, info, want_blob=save_blob)
             # The frame trigger goes out on the flip that shows this frame.
             self.display.call_on_flip(self.triggers.frame)
-            flip_t = self.display.draw_frame(adapter.render())
-            if play_sound:
-                self.audio.play(adapter.sound())
+            flip_t = self._show(adapter, play_sound)
 
             # Prefer env_action when an adapter translates UI meta-keys into a
             # different logged action (e.g. Rush Hour select+move -> Discrete).
@@ -408,6 +406,18 @@ class Session:
             for k, v in fs.variables.items():
                 frames["variables"][k].append(v)
         return False
+
+    def _show(self, adapter: EnvAdapter, play_sound: bool) -> float:
+        """Flip the adapter's frame, then queue its sound against that flip.
+
+        :param adapter: the env whose ``render`` / ``sound`` to present.
+        :param play_sound: pass the sound to the speakers.
+        :return: ``perf_counter`` of the flip.
+        """
+        flip_t = self.display.draw_frame(adapter.render())
+        if play_sound:
+            self.audio.play(adapter.sound(), flip_t)
+        return flip_t
 
     def _game(self, phase: dict, index: int) -> None:
         """Run a game block (one or more episodes) and save frame-level data.
@@ -458,6 +468,10 @@ class Session:
         frames["variables"] = defaultdict(list)  # varname -> list, filled lazily
 
         ## Init loop over episodes
+        # Frames land on refreshes; the sound's placement must allow for that.
+        locked = self.display.vsync and self.display.refresh_rate
+        flip_period = 1 / self.display.refresh_rate if locked else None
+        self.audio.start(flip_period=flip_period)
         onset = self.clock.session_time()
         block_end = time.perf_counter() + cap
         episode_id = 0

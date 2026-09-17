@@ -78,18 +78,17 @@ def main() -> None:
         if backend == "vgdl" and args.vgdl_repo:
             phase.setdefault("repo", args.vgdl_repo)
 
-    # Triggers first: a bad section or an unopenable port stops the run here,
-    # at the desk, before any window opens -- not mid-session with a participant.
+    # Triggers and audio first: a bad section, an unopenable port or an unusable
+    # sound output stops the run here, at the desk, before any window opens --
+    # not mid-session with a participant.
     triggers = Triggers.from_config(config.get("triggers"))
     print(f"triggers: {triggers.status()}", file=sys.stderr)
     if args.dummy_trigger:
         print("triggers: --dummy-trigger: the experimenter and scanner waits are skipped; "
               "this is a test run, not a session", file=sys.stderr)
-    if args.no_audio:
-        print("audio: --no-audio: playback muted in every game block "
-              "(recorded game audio is unchanged)", file=sys.stderr)
+    audio = Audio(enabled=not args.no_audio)
+    print(f"audio: {audio.status()}", file=sys.stderr)
     display = Display(size=(w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync)
-    audio = Audio()
     session = Session(args.subject, curriculum, display, outdir,
                       audio=audio, triggers=triggers, dummy_trigger=args.dummy_trigger)
     try:

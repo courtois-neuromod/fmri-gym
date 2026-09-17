@@ -15,11 +15,13 @@ immediately — it does not play a whole clip in one go. Keep the callback
 short: if it blocks or the queue runs dry, the buffer underruns and you
 hear silence or clicks.
 
-The caller pushes numpy blocks with :meth:`put` on another thread; the
-callback pulls from the queue. A queued block is often longer or shorter
-than one host buffer, so the callback's inner loop splices across blocks
-until that single slot is full, then returns while the caller keeps
-running.
+The caller pushes numpy blocks with :meth:`put` on another thread, each
+with the time it should start: its frame's flip plus a constant delay. Sound
+cannot start at the flip itself -- the chunk only exists once the frame is
+computed, and the device needs time to play it -- so the delay is measured
+from the device once, at start-up, and logged. The callback places each
+chunk by the DAC time PortAudio reports for its buffer, so the sound stays
+that far behind the picture however the game loop or the device clock wander.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from __future__ import annotations
 import glob
 import os
 import platform
+import time
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
@@ -66,6 +69,54 @@ import sounddevice  # noqa: E402  (needs the ALSA env above at import time)
 PLAYING = 1
 STOPPED = 2
 
+# How far gapless sound may sit off its onsets, on average, before it is
+# re-placed at the onset (a resync). The error is smoothed over chunks, so one
+# late or early frame (a slow step) plays on gapless, while a lasting offset or
+# a stall crosses the limit within a few chunks. On a vsync-locked display half
+# a refresh is added: frames land on refreshes, so onsets jitter by up to one
+# (35 fps on a 60 Hz monitor) and a resync can only anchor to one of them.
+_MAX_OFFSET = 0.003
+_SMOOTHING = 0.1                        # per chunk
+# Samples per callback: small enough for a short device delay, large enough
+# not to underrun on a desktop audio server.
+_BLOCKSIZE = 256
+# The delay is the measured device delay plus one block, rounded up to this
+# step plus one step of margin: the same on a given rig from run to run.
+_DELAY_STEP = 0.010
+
+
+def _device_lead(device: int | str | None, blocksize: int, seconds: float = 0.5) -> float:
+    """Play silence and measure how far ahead of the DAC the callback runs.
+
+    PortAudio's own ``latency`` figure is an estimate that can be well under
+    the real delay (5.8 ms reported vs 14 ms measured on a PipeWire desktop),
+    so the delay is chosen from what the callbacks report.
+
+    :param device: PortAudio output device.
+    :param blocksize: samples per callback, as the session will use.
+    :param seconds: how long to run.
+    :return: the longest ``outputBufferDacTime - currentTime`` seen, in seconds.
+    :raises RuntimeError: if the device reports no DAC times, so sound cannot
+        be placed against the flips.
+    """
+    leads: list[float] = []
+
+    def callback(outdata: np.ndarray, frames: int, timing: Any, status: Any) -> None:
+        outdata.fill(0)
+        leads.append(timing.outputBufferDacTime - timing.currentTime
+                     if timing.outputBufferDacTime else float("nan"))
+
+    with sounddevice.OutputStream(device=device, blocksize=blocksize, latency="low",
+                                  channels=1, callback=callback):
+        time.sleep(seconds)
+    settled = leads[len(leads) // 4:]       # skip the start-up transient
+    if not settled or np.isnan(settled).any():
+        raise RuntimeError("audio: this output reports no DAC timestamps, so sound cannot "
+                           "be placed against the flips; make another output the system "
+                           "default (python -m sounddevice lists them), or run with "
+                           "--no-audio")
+    return max(settled)
+
 
 def _preferred_output_device() -> int | None:
     """Pick the desktop's mixer PCM, so sound goes where the subject hears it.
@@ -85,82 +136,152 @@ def _preferred_output_device() -> int | None:
 
 
 class SoundDeviceGameBlockStream:
-    """Queue owned PCM blocks for nonblocking playback at their native rate."""
+    """Play PCM chunks at given times, at their native rate.
+
+    Each chunk carries its onset on the stream clock. The callback knows when
+    the first sample of every buffer reaches the DAC (``outputBufferDacTime``),
+    so it knows where in the buffer that onset falls. A chunk that follows the
+    previous one plays right after it, gapless, while the smoothed error
+    between onsets and gapless starts stays within :attr:`max_offset`. Past
+    it, the chunk is placed at its onset instead (a resync), with silence
+    before it or its already-past samples cut. Late sound is dropped by time,
+    never allowed to push the whole stream later.
+    """
 
     def __init__(
         self,
         sample_rate: float,
-        block_size: int = 0,
-        channels: int = 2,
-        dtype: str | np.dtype = sounddevice.default.dtype[1],
+        block_size: int,
+        channels: int,
+        dtype: str | np.dtype,
+        device: int | str | None,
+        max_offset: float,
     ) -> None:
-        """Open an inactive stream with at most 32 pending engine chunks.
+        """Open an inactive stream.
 
         :param sample_rate: native samples per second, including fractional rates.
-        :param block_size: device callback size; zero lets the host choose.
+        :param block_size: samples per callback.
         :param channels: number of PCM channels.
         :param dtype: native sample format supported by sounddevice.
+        :param device: PortAudio output device (index or name).
+        :param max_offset: seconds the smoothed onset error of gapless sound may
+            reach before a resync (:attr:`max_offset`, changeable).
         """
-        # Append/popleft are thread-safe; a full deque drops its oldest pending
-        # chunk instead of allowing a slow output device to accumulate audio.
-        self._blocks: deque[np.ndarray] = deque(maxlen=32)
+        self.rate = sample_rate
+        self.max_offset = max_offset
+        # (pcm, onset on the stream clock). Append/popleft are thread-safe.
+        self._blocks: deque[tuple[np.ndarray, float]] = deque()
         self._current: np.ndarray | None = None
         self._offset = 0
+        self._buffer = 0                    # callbacks so far
+        self._end: tuple[int, int] | None = None   # (buffer, index) just after the last chunk
+        self._error = 0.0                   # smoothed onset - gapless start, samples
+        self.clock_offset = 0.0             # perf_counter - stream clock
         self.status = STOPPED
-        self._prime = np.zeros((int(0.1 * sample_rate), channels), dtype=dtype)
-        device = _preferred_output_device()
         print("audio out:", sounddevice.query_devices(device, "output")["name"],
               f"({sample_rate:g} Hz, {channels}ch, {np.dtype(dtype).name})")
         self.output_stream = sounddevice.OutputStream(
-            samplerate=sample_rate, blocksize=block_size, latency=0.1,
+            samplerate=sample_rate, blocksize=block_size, latency="low",
             device=device, channels=channels, callback=self.callback, dtype=dtype,
             prime_output_buffers_using_stream_callback=False,
         )
 
-    def callback(self, outdata: np.ndarray, frames: int, time: Any, status: Any) -> None:
-        """Fill one device buffer without waiting for the game thread.
+    def callback(self, outdata: np.ndarray, frames: int, timing: Any, status: Any) -> None:
+        """Fill one device buffer with the chunks due in it, without waiting.
 
         :param outdata: writable device buffer shaped ``(frames, channels)``.
         :param frames: number of sample frames requested.
-        :param time: PortAudio timing information (unused).
+        :param timing: PortAudio times; ``outputBufferDacTime`` is when
+            ``outdata[0]`` plays.
         :param status: PortAudio status flags (unused).
         """
         outdata.fill(0)
+        self._buffer += 1
         if self.status != PLAYING:
             return
-        written = 0
-        while written < frames:
+        t0 = timing.outputBufferDacTime
+        pos = 0
+        while pos < frames:
             if self._current is None:
-                if not self._blocks:
+                pos = self._take_due(t0, pos, frames)
+                if self._current is None:
                     return
-                self._current = self._blocks.popleft()
-            count = min(len(self._current) - self._offset, frames - written)
-            outdata[written:written + count] = self._current[self._offset:self._offset + count]
-            written += count
+            count = min(len(self._current) - self._offset, frames - pos)
+            outdata[pos:pos + count] = self._current[self._offset:self._offset + count]
+            pos += count
             self._offset += count
             if self._offset == len(self._current):
                 self._current = None
-                self._offset = 0
+                # Continuity is counted in samples, not DAC times, which jitter.
+                self._end = (self._buffer + 1, 0) if pos == frames else (self._buffer, pos)
 
-    def put(self, block: np.ndarray) -> None:
-        """Queue a copy of one PCM chunk (engines reuse their buffers).
+    def _take_due(self, t0: float, pos: int, frames: int) -> int:
+        """Make the next chunk due in this buffer current; return where it starts.
+
+        :param t0: DAC time of this buffer's first sample.
+        :param pos: first free sample of the buffer.
+        :param frames: buffer length.
+        :return: the buffer index the current chunk starts at (``pos`` if none).
+        """
+        follows = self._end == (self._buffer, pos)
+        while self._blocks:
+            pcm, onset = self._blocks[0]
+            want = round((onset - t0) * self.rate)
+            error = self._gapless_error(want, pos, follows)
+            if want >= frames and error is None:
+                return pos                      # due in a later buffer
+            self._blocks.popleft()
+            start = want if error is None else pos
+            self._error = 0.0 if error is None else error
+            if start < pos:                     # late: its first samples are past
+                pcm, start = pcm[pos - start:], pos
+            if len(pcm):
+                self._current, self._offset = pcm, 0
+                return start
+        return pos
+
+    def _gapless_error(self, want: int, pos: int, follows: bool) -> float | None:
+        """The smoothed onset error if a chunk plays gapless, else ``None``.
+
+        A chunk that follows on is taken as soon as the previous one ends, even
+        when its onset falls in a later buffer, so a late onset never opens a
+        gap unless it is a resync.
+
+        :param want: buffer index of the chunk's onset.
+        :param pos: buffer index just after the previous chunk.
+        :param follows: whether the previous chunk ended exactly at ``pos``.
+        :return: the error in samples, including this chunk, or ``None`` to
+            place the chunk at its onset.
+        """
+        if not follows:
+            return None
+        error = self._error + _SMOOTHING * (want - pos - self._error)
+        return error if abs(error) <= self.max_offset * self.rate else None
+
+    def put(self, block: np.ndarray, onset: float) -> None:
+        """Queue a copy of one chunk (engines reuse their buffers).
 
         :param block: array shaped ``(samples, channels)`` in the stream's dtype.
+        :param onset: ``perf_counter`` time its first sample should play.
         """
-        self._blocks.append(block.copy(order="C"))
+        self._blocks.append((block.copy(order="C"), onset - self.clock_offset))
 
     def play(self) -> None:
-        """Start playback, with the same 100 ms of slack ahead of the real PCM."""
-        self._current, self._offset = self._prime, 0
+        """Start the stream and map ``perf_counter`` onto its clock."""
+        self._current, self._offset, self._end = None, 0, None
+        self._error = 0.0
         self.status = PLAYING
         self.output_stream.start()
+        before = time.perf_counter()
+        stream_time = self.output_stream.time
+        self.clock_offset = (before + time.perf_counter()) / 2 - stream_time
 
     def stop(self) -> None:
         """Stop callbacks and discard queued and partially consumed samples."""
         self.status = STOPPED
         self.output_stream.stop()
         self._blocks.clear()
-        self._current, self._offset = None, 0
+        self._current, self._offset, self._end = None, 0, None
 
     def close(self) -> None:
         """Stop playback and release the PortAudio stream."""
@@ -178,36 +299,108 @@ class Audio:
     rate, channel count, or sample format.
     """
 
-    def __init__(self) -> None:
-        """Create a silent output; no device is opened until :meth:`play`."""
+    def __init__(self, enabled: bool = True) -> None:
+        """Open the system's output, measure its delay and choose the audio delay.
+
+        No stream is opened until :meth:`play`. The output is the desktop mixer
+        (:func:`_preferred_output_device`), i.e. wherever the system plays sound:
+        pick the rig's output there, as for any other program.
+
+        :param enabled: ``False`` (``--no-audio``) never touches a sound device,
+            so a machine without one can run; a block that then has sound to
+            play raises.
+        :raises RuntimeError: if there is no usable output, or it reports no
+            DAC timestamps.
+        """
+        self.enabled = enabled
+        self._max_offset = _MAX_OFFSET
         self.stream: SoundDeviceGameBlockStream | None = None
         self.format: tuple | None = None
+        if enabled:
+            self._open_output()
 
-    def play(self, sound: Sound | None) -> None:
-        """Queue one chunk of PCM, starting the output if it is not running.
+    def _open_output(self) -> None:
+        """Resolve the output, measure its delay and set :attr:`delay` from it.
+
+        :raises RuntimeError: if there is no usable output, or it reports no
+            DAC timestamps.
+        """
+        self.device = _preferred_output_device()
+        try:
+            info = sounddevice.query_devices(self.device, "output")
+        except (ValueError, sounddevice.PortAudioError) as e:
+            raise RuntimeError(f"audio: no usable output device ({e}); "
+                               "run with --no-audio for a silent session") from e
+        self.device_name = info["name"]
+        self.samplerate = info["default_samplerate"]
+        self.hostapi = sounddevice.query_hostapis(info["hostapi"])["name"]
+        self.lead = _device_lead(self.device, _BLOCKSIZE)
+        needed = self.lead + _BLOCKSIZE / self.samplerate
+        #: seconds from a frame's flip to its sound's first sample at the DAC.
+        self.delay = float((np.ceil(needed / _DELAY_STEP) + 1) * _DELAY_STEP)
+
+    def status(self) -> str:
+        """One line for the experimenter screen and the console.
+
+        :return: e.g. ``"out: default (ALSA) | sound at flip + 40 ms (device
+            delay 16.4 ms)"``.
+        """
+        if not self.enabled:
+            return ("off (--no-audio): playback muted in every game block, no output "
+                    "opened; logged game audio is unchanged")
+        return (f"out: {self.device_name} ({self.hostapi}) | sound at flip + "
+                f"{self.delay * 1000:.0f} ms (device delay {self.lead * 1000:.1f} ms)")
+
+    def describe(self) -> dict[str, Any]:
+        """The output and the delay it got, for the manifest.
+
+        :return: a JSON-serializable dict.
+        """
+        if not self.enabled:
+            return {"enabled": False}
+        return {"enabled": True, "device": self.device_name, "hostapi": self.hostapi,
+                "device_delay_ms": self.lead * 1000, "delay_ms": self.delay * 1000}
+
+    def start(self, *, flip_period: float | None) -> None:
+        """Begin a game block: fit placement to the display.
+
+        :param flip_period: the refresh period of a vsync-locked display, or
+            ``None``; half of it widens :data:`_MAX_OFFSET`.
+        """
+        self._max_offset = _MAX_OFFSET + (flip_period or 0.0) / 2
+        if self.stream is not None:
+            self.stream.max_offset = self._max_offset
+
+    def play(self, sound: Sound | None, flip_t: float) -> None:
+        """Queue one chunk to start :attr:`delay` after its frame's flip.
 
         :param sound: a :class:`~fmri_gym.adapters.base.Sound`, or ``None`` for
             a frame with nothing to play (which leaves playback alone, rather
             than cutting off what is still queued).
+        :param flip_t: ``perf_counter`` of the flip that showed the frame.
         :raises ValueError: if the PCM is not shaped ``(samples, channels)``.
+        :raises RuntimeError: if the output is off (``--no-audio``).
         """
         if sound is None or not len(sound.pcm):
             return
+        if not self.enabled:
+            raise RuntimeError("audio: a game block has sound to play but the output is off "
+                               '(--no-audio); set "audio": false on that phase')
         pcm = sound.pcm
-        # Chunk LENGTH is only a hint to PortAudio -- the callback splices
-        # across queued blocks -- so a shorter final chunk must not count as a
-        # format change and reopen the device mid-episode.
+        # Chunk LENGTH varies (a shorter final chunk, 735/736-sample retro
+        # frames) and must not count as a format change that reopens the device.
         sound_format = (sound.sample_rate, pcm.shape[1:], pcm.dtype)
         if sound_format != self.format:
             if pcm.ndim != 2:
                 raise ValueError(f"audio must be shaped (samples, channels), got {pcm.shape}")
             self.close()
             self.stream = SoundDeviceGameBlockStream(
-                sound.sample_rate, pcm.shape[0], pcm.shape[1], dtype=pcm.dtype)
+                sound.sample_rate, _BLOCKSIZE, pcm.shape[1], pcm.dtype,
+                self.device, self._max_offset)
             self.format = sound_format
-        self.stream.put(pcm)
         if self.stream.status != PLAYING:
             self.stream.play()
+        self.stream.put(pcm, flip_t + self.delay)
 
     def stop(self) -> None:
         """Stop playback and drop what is still queued.
