@@ -5,13 +5,27 @@ one-liner. For design notes, adapters, and logging details see [README.md](READM
 
 ## 1. Install
 
+First the one **system** library, PortAudio. `fmri_gym` imports its audio layer
+unconditionally, so without it *every* backend fails at import with
+`OSError: PortAudio library not found` (see
+[Machine requirements](MACHINE_REQUIREMENTS.md#audio-output)):
+
+```bash
+sudo apt install libportaudio2      # Debian/Ubuntu (macOS: brew install portaudio)
+```
+
+Then the Python side. Install [uv](https://docs.astral.sh/uv/) if you don't have
+it (`curl -LsSf https://astral.sh/uv/install.sh | sh`), and from the repo root:
+
 ```bash
 uv sync --extra dbp
 ```
 
 That installs every game below into `.venv/`; `uv run fmri-play ...` then
-plays one. Without [uv](https://docs.astral.sh/uv/): `pip install -e ".[dbp]"`
-in a venv of your own, and `python fmri_play.py` in place of `fmri-play`.
+plays one. Check the install with `uv run fmri-play --help`, which prints the
+usage if — and only if — both steps above worked. Without uv:
+`pip install -e ".[dbp]"` in a venv of your own, and `python fmri_play.py` in
+place of `fmri-play`.
 
 Rush Hour needs no extra step: `rushhour-gym` comes from PyPI, and on first use it
 downloads the matching `rushhour-env` engine from the Rush-Hour

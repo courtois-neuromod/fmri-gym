@@ -38,7 +38,15 @@ See [Machine requirements](MACHINE_REQUIREMENTS.md) for minimum and recommended
 hardware, and the [local test log](docs/local-testing/2026-09-14.md) for measurements
 and their scope.
 
-With [uv](https://docs.astral.sh/uv/):
+One system library comes first — PortAudio, which the audio layer loads at
+import, so without it every backend raises `OSError: PortAudio library not
+found`:
+
+```bash
+sudo apt install libportaudio2      # Debian/Ubuntu (macOS: brew install portaudio)
+```
+
+Then, with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv sync --extra dbp                          # .venv/ with the nine DBP backends, pinned by uv.lock
