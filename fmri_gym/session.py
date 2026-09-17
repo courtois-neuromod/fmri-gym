@@ -329,6 +329,7 @@ class Session:
         dt: float,
         state_stride: int,
         block_end: float,
+        play_sound: bool,
     ) -> bool:
         """Run one episode, appending frame data to ``frames``.
 
@@ -340,6 +341,8 @@ class Session:
         :param dt: target seconds per frame (``1 / fps``).
         :param state_stride: save a full state blob every this many frames.
         :param block_end: ``perf_counter`` deadline for the game block.
+        :param play_sound: pass the adapter's sound to the speakers (the
+            phase's ``audio``); muting never changes what is logged.
         :return: ``True`` if the user quit (ESC/window close), else ``False``.
         """
         frames["episode_seeds"].append(seed)
@@ -348,7 +351,6 @@ class Session:
         next_t = time.perf_counter()
         key_to_action = adapter.keyspec.key_to_action_map() if turn_based else None
         key_log = frames["key_events"]
-        play_sound = bool(adapter.spec.get("audio", True))
 
         ## Reset environment and show initial state
         obs, info = adapter.reset(seed)
@@ -440,6 +442,10 @@ class Session:
         # for e.g. FrozenLake is action 0 = LEFT), so the agent "moves on its own"
         # and a single held key fires many times. turn_based fixes both.
         turn_based = bool(phase.get("turn_based", False))
+        play_sound = phase.get("audio", True)
+        if not isinstance(play_sound, bool):
+            raise ValueError(f'game phase {index}: "audio" must be true or false, '
+                             f"got {play_sound!r}")
 
         # Some backends (nle, browser games) take several seconds to start;
         # show a Loading screen so the previous fixation "+" doesn't freeze.
@@ -460,15 +466,14 @@ class Session:
         ## Loop over episodes within game block
         while not user_quit and time.perf_counter() < block_end:
             ## Run one episode
-            try:
-                user_quit = self._episode(
-                    adapter, frames,
-                    seed=base_seed + episode_id, episode_id=episode_id,
-                    turn_based=turn_based, dt=dt, state_stride=state_stride,
-                    block_end=block_end)
-            finally:
-                # Drop pending audio on completion, ESC, or an engine failure.
-                self.audio.stop()
+            user_quit = self._episode(
+                adapter, frames,
+                seed=base_seed + episode_id, episode_id=episode_id,
+                turn_based=turn_based, dt=dt, state_stride=state_stride,
+                block_end=block_end, play_sound=play_sound)
+            # An episode's last sounds are still queued when it ends; drop them
+            # so they do not play over the next episode or the next fixation.
+            self.audio.stop()
             episode_id += 1
             if mode == "episode" and episode_id >= n_episodes:
                 break
@@ -514,12 +519,9 @@ class Session:
         except KeyboardInterrupt:
             print("Interrupted -- saving partial data.", file=sys.stderr)
         finally:
-            try:
-                self.audio.stop()
-            finally:
-                if self.clock.t0_perf is not None:
-                    self.triggers.lifecycle("task_stop")
-                self.logger.set_extra("triggers", self.triggers.describe(self.clock))
-                manifest_path = self.logger.save_manifest()
-                print(f"Saved session to: {self.outdir}")
-                print(f"Manifest: {manifest_path}")
+            if self.clock.t0_perf is not None:
+                self.triggers.lifecycle("task_stop")
+            self.logger.set_extra("triggers", self.triggers.describe(self.clock))
+            manifest_path = self.logger.save_manifest()
+            print(f"Saved session to: {self.outdir}")
+            print(f"Manifest: {manifest_path}")
