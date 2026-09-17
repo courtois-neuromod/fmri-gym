@@ -77,12 +77,34 @@ STOPPED = 2
 # (35 fps on a 60 Hz monitor) and a resync can only anchor to one of them.
 _MAX_OFFSET = 0.003
 _SMOOTHING = 0.1                        # per chunk
+# Largest stretch or squeeze of a chunk that follows the flip clock: 0.2% is
+# 3.5 cents of pitch, below what a listener hears, and 2 ms per second of
+# correction -- more than the drift between a sound card and the system clock,
+# or a 59.92 Hz console core on a 60 Hz loop.
+_MAX_STRETCH = 2e-3
+# Fraction of the smoothed error corrected per chunk.
+_GAIN = 0.1
 # Samples per callback: small enough for a short device delay, large enough
 # not to underrun on a desktop audio server.
 _BLOCKSIZE = 256
 # The delay is the measured device delay plus one block, rounded up to this
 # step plus one step of margin: the same on a given rig from run to run.
 _DELAY_STEP = 0.010
+
+
+def _resample(pcm: np.ndarray, n: int) -> np.ndarray:
+    """Linearly resample ``pcm`` to ``n`` samples, keeping its dtype.
+
+    :param pcm: array shaped ``(samples, channels)``.
+    :param n: target number of samples.
+    :return: a new C-contiguous array shaped ``(n, channels)``.
+    """
+    x = np.linspace(0, len(pcm) - 1, n)
+    xp = np.arange(len(pcm))
+    out = np.column_stack([np.interp(x, xp, pcm[:, c]) for c in range(pcm.shape[1])])
+    if np.issubdtype(pcm.dtype, np.integer):
+        out = np.round(out)
+    return np.ascontiguousarray(out.astype(pcm.dtype))
 
 
 def _device_lead(device: int | str | None, blocksize: int, seconds: float = 0.5) -> float:
@@ -146,6 +168,11 @@ class SoundDeviceGameBlockStream:
     it, the chunk is placed at its onset instead (a resync), with silence
     before it or its already-past samples cut. Late sound is dropped by time,
     never allowed to push the whole stream later.
+
+    Gapless chunks drift off their onsets when the game loop and the sound card
+    disagree about time. The callback measures that error and :meth:`put`
+    resamples the next chunks by up to :data:`_MAX_STRETCH` to steer it back to
+    zero, so resyncs stay for stalls.
     """
 
     def __init__(
@@ -176,6 +203,7 @@ class SoundDeviceGameBlockStream:
         self._buffer = 0                    # callbacks so far
         self._end: tuple[int, int] | None = None   # (buffer, index) just after the last chunk
         self._error = 0.0                   # smoothed onset - gapless start, samples
+        self._carry = 0.0                   # fractional samples still to stretch
         self.clock_offset = 0.0             # perf_counter - stream clock
         self.status = STOPPED
         print("audio out:", sounddevice.query_devices(device, "output")["name"],
@@ -264,12 +292,18 @@ class SoundDeviceGameBlockStream:
         :param block: array shaped ``(samples, channels)`` in the stream's dtype.
         :param onset: ``perf_counter`` time its first sample should play.
         """
-        self._blocks.append((block.copy(order="C"), onset - self.clock_offset))
+        n = len(block)
+        # Positive error: gapless chunks start before their onsets -> lengthen.
+        self._carry += max(-_MAX_STRETCH * n, min(_MAX_STRETCH * n, _GAIN * self._error))
+        extra = round(self._carry)
+        self._carry -= extra
+        pcm = _resample(block, n + extra) if extra else block.copy(order="C")
+        self._blocks.append((pcm, onset - self.clock_offset))
 
     def play(self) -> None:
         """Start the stream and map ``perf_counter`` onto its clock."""
         self._current, self._offset, self._end = None, 0, None
-        self._error = 0.0
+        self._error = self._carry = 0.0
         self.status = PLAYING
         self.output_stream.start()
         before = time.perf_counter()
