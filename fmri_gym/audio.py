@@ -350,6 +350,9 @@ class Audio:
         self._max_offset = _MAX_OFFSET
         self.stream: SoundDeviceGameBlockStream | None = None
         self.format: tuple | None = None
+        self._period: float | None = None   # seconds per step, while being checked
+        self._sound_s = 0.0                 # sound produced by the checked steps
+        self._steps = 0
         if enabled:
             self._open_output()
 
@@ -395,15 +398,48 @@ class Audio:
         return {"enabled": True, "device": self.device_name, "hostapi": self.hostapi,
                 "device_delay_ms": self.lead * 1000, "delay_ms": self.delay * 1000}
 
-    def start(self, *, flip_period: float | None) -> None:
-        """Begin a game block: fit placement to the display.
+    def start(self, *, frame_period: float | None, flip_period: float | None) -> None:
+        """Begin a game block: fit placement to the display, check the frame rate.
 
+        Sound can follow the flips only if each step makes about one frame
+        period of it; resampling covers :data:`_MAX_STRETCH`, not a game running
+        at the wrong speed. The check runs over the first second of sound.
+
+        :param frame_period: ``1 / fps``, or ``None`` for a turn-based block,
+            whose steps are not paced.
         :param flip_period: the refresh period of a vsync-locked display, or
             ``None``; half of it widens :data:`_MAX_OFFSET`.
         """
         self._max_offset = _MAX_OFFSET + (flip_period or 0.0) / 2
+        self._period, self._sound_s, self._steps = frame_period, 0.0, 0
         if self.stream is not None:
             self.stream.max_offset = self._max_offset
+
+    def _check_rate(self, sound: Sound) -> None:
+        """Add one step's sound to the block's rate check; raise once it is off.
+
+        The first chunk after the stream (re)starts is skipped: the first step
+        of an episode can carry what the engine made during its reset.
+
+        :param sound: the step's sound.
+        :raises ValueError: if the sound per step and the frame period differ
+            by more than :data:`_MAX_STRETCH`.
+        """
+        if self._period is None or self.stream.status != PLAYING:
+            return
+        self._sound_s += len(sound.pcm) / sound.sample_rate
+        self._steps += 1
+        if self._sound_s < 1.0:
+            return
+        per_step = self._sound_s / self._steps
+        period, self._period = self._period, None
+        if abs(per_step / period - 1) > _MAX_STRETCH:
+            raise ValueError(
+                f"audio: the game makes {per_step * 1000:.3f} ms of sound per step but "
+                f"steps every {period * 1000:.3f} ms ({per_step / period - 1:+.2%}); "
+                f"sound can follow the flips only within {_MAX_STRETCH:.1%}. "
+                f"Set this block's fps to {1 / per_step:.4f} (ViZDoom: fps * frame_skip "
+                "must be 35), or set \"audio\": false")
 
     def play(self, sound: Sound | None, flip_t: float) -> None:
         """Queue one chunk to start :attr:`delay` after its frame's flip.
@@ -412,7 +448,9 @@ class Audio:
             a frame with nothing to play (which leaves playback alone, rather
             than cutting off what is still queued).
         :param flip_t: ``perf_counter`` of the flip that showed the frame.
-        :raises ValueError: if the PCM is not shaped ``(samples, channels)``.
+        :raises ValueError: if the PCM is not shaped ``(samples, channels)``,
+            or its amount per step does not match the block's frame rate
+            (:meth:`start`).
         :raises RuntimeError: if the output is off (``--no-audio``).
         """
         if sound is None or not len(sound.pcm):
@@ -432,6 +470,7 @@ class Audio:
                 sound.sample_rate, _BLOCKSIZE, pcm.shape[1], pcm.dtype,
                 self.device, self._max_offset)
             self.format = sound_format
+        self._check_rate(sound)
         if self.stream.status != PLAYING:
             self.stream.play()
         self.stream.put(pcm, flip_t + self.delay)

@@ -471,7 +471,7 @@ class Session:
         # Frames land on refreshes; the sound's placement must allow for that.
         locked = self.display.vsync and self.display.refresh_rate
         flip_period = 1 / self.display.refresh_rate if locked else None
-        self.audio.start(flip_period=flip_period)
+        self.audio.start(frame_period=None if turn_based else dt, flip_period=flip_period)
         onset = self.clock.session_time()
         block_end = time.perf_counter() + cap
         episode_id = 0
