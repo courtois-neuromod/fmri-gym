@@ -5,8 +5,8 @@ Maps stable-retro behind the standard EnvAdapter interface:
 - per-frame exact savestate via em.get_state()/set_state() (bit-exact, verified);
 - state variables: the console RAM plus the game's decoded `info` variables
   (score/lives/... from the integration's data.json), surfaced uniformly.
-- native PCM through sound(), enabled by default ("audio": false to mute).
-  Match fps to the emulator's screen rate; samples are not resampled.
+- native PCM through sound(), played unless the phase sets "audio": false
+  (retro does not log it). Match fps to the core's frame rate (Genesis: 59.92).
 
 Notes verified against stable_retro 1.0.1:
 - The emulator object is env.unwrapped.em; the libretro RAM view must be
@@ -22,6 +22,7 @@ from typing import Any
 
 import gymnasium as gym
 import numpy as np
+import stable_retro as retro
 
 from .base import EnvAdapter, FrameState, Sound
 from .keyspec import MultiKeySpec
@@ -42,8 +43,6 @@ class RetroAdapter(EnvAdapter):
     name: str = "retro"
 
     def _make(self, spec: dict) -> gym.Env:
-        import stable_retro as retro
-
         # save_pixels accepted for interface symmetry; retro frames are already
         # reconstructable from the per-frame state, so pixels aren't stored.
         self.save_pixels = bool(spec.get("save_pixels", False))

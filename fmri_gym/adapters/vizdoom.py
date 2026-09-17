@@ -18,11 +18,10 @@ indices. Setting `env_kwargs.max_buttons_pressed` to 0 switches the env to a
 MultiBinary action space so several buttons can be pressed at once; the keymap
 is unchanged, we just OR the buttons of every held key (e.g. forward + turn).
 
-Sound is enabled by default: `env_kwargs.audio_buffer_enabled` puts one tic
+Sound is opt-in per curriculum: `env_kwargs.audio_buffer_enabled` puts one tic
 of stereo PCM in `obs["audio"]` (so a model sees the same observation a subject
 hears), which `sound()` hands to the session's speakers and `capture()` logs.
-Set `audio: false` to mute playback while retaining observations and logs, or
-`env_kwargs.audio_buffer_enabled: false` to disable PCM production entirely.
+The phase's `"audio": false` mutes the speakers; the PCM is still logged.
 Doom produces 1/35 s of sound per step whatever the frame rate, so audio only
 runs in real time when `fps * env_kwargs.frame_skip == 35`; below that it plays
 with gaps, above it lags further behind every frame.
@@ -128,10 +127,8 @@ class VizDoomAdapter(EnvAdapter):
         :return: a ViZDoom Gymnasium environment.
         """
         from vizdoom import gymnasium_wrapper  # noqa: F401  (registers Vizdoom*-v1)
-        kwargs = dict(spec.get("env_kwargs", {}))
-        # The wrapper establishes its observation space and buffers at creation.
-        kwargs.setdefault("audio_buffer_enabled", True)
-        env = gym.make(spec["game"], render_mode="rgb_array", **kwargs)
+        env = gym.make(spec["game"], render_mode="rgb_array",
+                       **spec.get("env_kwargs", {}))
         if env.unwrapped.game.is_audio_buffer_enabled():
             # ViZDoom 1.3.0 ships an assert-enabled OpenAL Soft whose EFX
             # (reverb) filter setup aborts with "gain > 0.00001f" the moment the
@@ -150,7 +147,7 @@ class VizDoomAdapter(EnvAdapter):
     def sound(self) -> Sound | None:
         """Return the frame's Doom audio, or ``None`` if there is none to play.
 
-        ``audio_buffer`` is ``None`` when the curriculum disables the buffer,
+        ``audio_buffer`` is ``None`` unless the curriculum turned the buffer on,
         and ``state`` itself is ``None`` on a terminal frame -- the episode is
         over, so there is nothing left to hear.
 
@@ -167,17 +164,17 @@ class VizDoomAdapter(EnvAdapter):
         if isinstance(obs, dict) and "gamevariables" in obs:
             variables["gamevariables"] = np.asarray(obs["gamevariables"]).copy()
         if isinstance(obs, dict) and "audio" in obs:
-            # Native PCM produced this step, including when playback is muted.
-            # Taken from obs, not sound(),
-            # because obs has a (zeroed) audio buffer on the terminal frame too,
-            # keeping this series the same length as actions and rewards.
+            # The PCM this step produced (logged even when playback is muted).
+            # Taken from obs, not sound(), because obs has a (zeroed) audio
+            # buffer on the terminal frame too, keeping this series the same
+            # length as actions and rewards.
             variables["audio"] = np.asarray(obs["audio"]).copy()
         return FrameState(blob=None, variables=variables)
 
     def block_extra(self) -> dict | None:
         """Block-level arrays merged into the npz (the audio sample rate).
 
-        :return: ``{"audio_sampling_rate": Hz}`` when engine PCM is enabled, else
+        :return: ``{"audio_sampling_rate": Hz}`` when sound is on, else
             ``None``. Without it the logged ``audio`` is not playable back.
         """
         game = self.env.unwrapped.game
