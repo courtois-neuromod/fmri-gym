@@ -51,7 +51,8 @@ def main() -> None:
     p.add_argument("--no-vsync", action="store_true",
                    help="do not lock flips to the monitor refresh (default: try to)")
     p.add_argument("--dummy-trigger", action="store_true")
-    p.add_argument("--no-audio", action="store_true", help="Disable game audio for this session.")
+    p.add_argument("--no-audio", action="store_true", help="mute game audio in every block (the curriculum saved "
+                   "in the manifest shows \"audio\": false)")
     p.add_argument("--save-pixels", action="store_true",
                    help="ALE only: also store lossless pixels (large; warns).")
     p.add_argument("--vgdl-repo", default=os.environ.get("VGDL_REPO"),
@@ -84,6 +85,9 @@ def main() -> None:
     if args.dummy_trigger:
         print("triggers: --dummy-trigger: the experimenter and scanner waits are skipped; "
               "this is a test run, not a session", file=sys.stderr)
+    if args.no_audio:
+        print("audio: --no-audio: playback muted in every game block "
+              "(recorded game audio is unchanged)", file=sys.stderr)
     display = Display(size=(w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync)
     audio = Audio()
     session = Session(args.subject, curriculum, display, outdir,
