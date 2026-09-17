@@ -62,6 +62,8 @@ Runtime: experimenter screen (**SPACE**) → "Waiting for scanner..." → trigge
 stable-retro games play their native audio, and ViZDoom does when its config sets
 `env_kwargs.audio_buffer_enabled`. Add `--no-audio` to mute every game, or set
 `"audio": false` on a game phase to mute that block; logged audio is unchanged.
+Sound plays through the system's default output, a constant delay after its
+frame's flip (printed at start-up).
 
 ## 3. Run every game
 

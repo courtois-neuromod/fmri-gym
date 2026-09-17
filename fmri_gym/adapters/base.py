@@ -177,6 +177,13 @@ class EnvAdapter:
         hands :meth:`render` to the display. Default is ``None`` -- a silent
         backend, which is most of them.
 
+        Return the PCM the engine produced during the last step, at its native
+        rate: no resampling, no copying, no timing -- the session places it
+        against the flip. It should last about one frame period (``1 / fps``);
+        a block where it does not stops with the fps that would fit. Playback
+        does not store it: to log it, surface it from :meth:`capture` too
+        (ViZDoom's ``audio``).
+
         :return: a :class:`Sound`, or ``None`` if there is nothing to play.
         """
         return None

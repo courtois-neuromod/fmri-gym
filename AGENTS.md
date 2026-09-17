@@ -31,6 +31,8 @@ An adapter is lightweight glue that takes a gym env and makes it fMRI-friendly. 
 - build the env (`_make`) and, if needed, normalize a non-Gymnasium API (`reset`/`step`)
 - declare a default keyboard map (`_keyspec`)
 - produce an RGB frame for the screen (`render`)
+- if the engine makes sound, hand over this step's PCM (`sound`; the contract is in
+  `EnvAdapter.sound`, and `retro.py` is a two-line example)
 - pull out the analysis-relevant variables (`capture`)
 
 If you find yourself writing game rules, drawing a board, tracking a selection cursor,

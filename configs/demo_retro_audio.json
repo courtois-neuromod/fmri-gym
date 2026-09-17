@@ -1,5 +1,5 @@
 {
-  "_note": "Airstriker ships with stable-retro. Audio plays by default; --no-audio mutes playback. The fps matches this Genesis core's native rate.",
+  "_note": "Airstriker ships with stable-retro. Its sound plays a constant delay after each frame's flip; --no-audio mutes it. fps is this Genesis core's native rate: the session stops a block whose sound per step does not match 1/fps.",
   "curriculum": [
     {"type": "message", "text": "Airstriker: arrows move, Z fires; ESC quits.", "duration": 2.0},
     {"type": "fixation", "duration": 1.0},
