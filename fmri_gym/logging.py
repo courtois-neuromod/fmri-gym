@@ -105,6 +105,11 @@ class Logger:
         # present only when a trigger backend is active.
         if frames["trigger"]:
             arrays["trigger"] = np.asarray(frames["trigger"], dtype=np.int16)
+        # Session time each frame's sound started at the DAC (NaN: the frame
+        # had none, or it never played); present only when the block had sound.
+        # audio_onset - flip_time is the audio delay actually achieved.
+        if len(frames["audio_onset"]):
+            arrays["audio_onset"] = np.asarray(frames["audio_onset"], dtype=np.float64)
         # Every key press/release during the block, stamped on arrival
         # (~1 ms), independent of the frame grid.
         events = frames["key_events"]

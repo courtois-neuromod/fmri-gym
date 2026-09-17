@@ -387,6 +387,7 @@ class Session:
             # The frame trigger goes out on the flip that shows this frame.
             self.display.call_on_flip(self.triggers.frame)
             flip_t = self._show(adapter, play_sound)
+            frames["audio_chunk"].append(self.audio.last_chunk)
 
             # Prefer env_action when an adapter translates UI meta-keys into a
             # different logged action (e.g. Rush Hour select+move -> Discrete).
@@ -494,6 +495,10 @@ class Session:
 
         self.triggers.block_end()
         extra = getattr(adapter, "block_extra", lambda: None)()
+        audio_log = self.audio.block_log(frames["audio_chunk"])
+        if audio_log:
+            frames["audio_onset"] = self.clock.from_perf(audio_log.pop("audio_onset"))
+            extra = {**(extra if extra is not None else {}), **audio_log}
         adapter.close()
         # Some gym envs (classic-control) call pygame.display.quit() on close(),
         # which tears down our shared window; rebuild it if so.

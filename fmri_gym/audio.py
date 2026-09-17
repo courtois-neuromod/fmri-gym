@@ -183,6 +183,7 @@ class SoundDeviceGameBlockStream:
         dtype: str | np.dtype,
         device: int | str | None,
         max_offset: float,
+        log: dict[str, Any],
     ) -> None:
         """Open an inactive stream.
 
@@ -193,11 +194,14 @@ class SoundDeviceGameBlockStream:
         :param device: PortAudio output device (index or name).
         :param max_offset: seconds the smoothed onset error of gapless sound may
             reach before a resync (:attr:`max_offset`, changeable).
+        :param log: where the callback records ``onsets`` (``(chunk, perf_counter
+            start)`` pairs), ``resyncs`` and ``trimmed`` samples; owned by
+            :class:`Audio`, so a block's log survives the stream being reopened.
         """
         self.rate = sample_rate
         self.max_offset = max_offset
         # (pcm, onset on the stream clock). Append/popleft are thread-safe.
-        self._blocks: deque[tuple[np.ndarray, float]] = deque()
+        self._blocks: deque[tuple[np.ndarray, float, int]] = deque()
         self._current: np.ndarray | None = None
         self._offset = 0
         self._buffer = 0                    # callbacks so far
@@ -205,6 +209,7 @@ class SoundDeviceGameBlockStream:
         self._error = 0.0                   # smoothed onset - gapless start, samples
         self._carry = 0.0                   # fractional samples still to stretch
         self.clock_offset = 0.0             # perf_counter - stream clock
+        self.log = log
         self.status = STOPPED
         print("audio out:", sounddevice.query_devices(device, "output")["name"],
               f"({sample_rate:g} Hz, {channels}ch, {np.dtype(dtype).name})")
@@ -253,17 +258,22 @@ class SoundDeviceGameBlockStream:
         """
         follows = self._end == (self._buffer, pos)
         while self._blocks:
-            pcm, onset = self._blocks[0]
+            pcm, onset, chunk = self._blocks[0]
             want = round((onset - t0) * self.rate)
             error = self._gapless_error(want, pos, follows)
             if want >= frames and error is None:
                 return pos                      # due in a later buffer
             self._blocks.popleft()
+            if error is None and self._end is not None:   # sound was playing: cut
+                self.log["resyncs"] += 1
             start = want if error is None else pos
             self._error = 0.0 if error is None else error
+            first = t0 + start / self.rate + self.clock_offset
             if start < pos:                     # late: its first samples are past
+                self.log["trimmed"] += min(pos - start, len(pcm))
                 pcm, start = pcm[pos - start:], pos
             if len(pcm):
+                self.log["onsets"].append((chunk, first))
                 self._current, self._offset = pcm, 0
                 return start
         return pos
@@ -286,11 +296,12 @@ class SoundDeviceGameBlockStream:
         error = self._error + _SMOOTHING * (want - pos - self._error)
         return error if abs(error) <= self.max_offset * self.rate else None
 
-    def put(self, block: np.ndarray, onset: float) -> None:
+    def put(self, block: np.ndarray, onset: float, chunk: int) -> None:
         """Queue a copy of one chunk (engines reuse their buffers).
 
         :param block: array shaped ``(samples, channels)`` in the stream's dtype.
         :param onset: ``perf_counter`` time its first sample should play.
+        :param chunk: its number in the block, for :attr:`log`.
         """
         n = len(block)
         # Positive error: gapless chunks start before their onsets -> lengthen.
@@ -298,7 +309,7 @@ class SoundDeviceGameBlockStream:
         extra = round(self._carry)
         self._carry -= extra
         pcm = _resample(block, n + extra) if extra else block.copy(order="C")
-        self._blocks.append((pcm, onset - self.clock_offset))
+        self._blocks.append((pcm, onset - self.clock_offset, chunk))
 
     def play(self) -> None:
         """Start the stream and map ``perf_counter`` onto its clock."""
@@ -351,6 +362,10 @@ class Audio:
         self.stream: SoundDeviceGameBlockStream | None = None
         self.format: tuple | None = None
         self._period: float | None = None   # seconds per step, while being checked
+        #: number of the chunk queued by the latest :meth:`play` (-1: none), for the log.
+        self.last_chunk = -1
+        self._queued = 0                    # chunks queued in this block
+        self._log: dict[str, Any] = {"onsets": [], "resyncs": 0, "trimmed": 0}
         self._sound_s = 0.0                 # sound produced by the checked steps
         self._steps = 0
         if enabled:
@@ -412,8 +427,27 @@ class Audio:
         """
         self._max_offset = _MAX_OFFSET + (flip_period or 0.0) / 2
         self._period, self._sound_s, self._steps = frame_period, 0.0, 0
+        self._queued = 0
+        self._log = {"onsets": [], "resyncs": 0, "trimmed": 0}
         if self.stream is not None:
             self.stream.max_offset = self._max_offset
+            self.stream.log = self._log
+
+    def block_log(self, chunks: list[int]) -> dict[str, Any]:
+        """The block's sound timing for its npz, or ``{}`` if it played none.
+
+        :param chunks: per frame, :attr:`last_chunk` after that frame's flip.
+        :return: ``audio_onset`` (``perf_counter`` each frame's sound started
+            playing; NaN if it had none, or it never played), ``audio_delay_ms``,
+            ``audio_resyncs`` and ``audio_trimmed_samples``.
+        """
+        if max(chunks, default=-1) < 0:
+            return {}
+        started = dict(self._log["onsets"])
+        return {"audio_onset": np.array([started.get(c, np.nan) for c in chunks]),
+                "audio_delay_ms": self.delay * 1000,
+                "audio_resyncs": self._log["resyncs"],
+                "audio_trimmed_samples": self._log["trimmed"]}
 
     def _check_rate(self, sound: Sound) -> None:
         """Add one step's sound to the block's rate check; raise once it is off.
@@ -453,6 +487,7 @@ class Audio:
             (:meth:`start`).
         :raises RuntimeError: if the output is off (``--no-audio``).
         """
+        self.last_chunk = -1
         if sound is None or not len(sound.pcm):
             return
         if not self.enabled:
@@ -468,12 +503,14 @@ class Audio:
             self.close()
             self.stream = SoundDeviceGameBlockStream(
                 sound.sample_rate, _BLOCKSIZE, pcm.shape[1], pcm.dtype,
-                self.device, self._max_offset)
+                self.device, self._max_offset, self._log)
             self.format = sound_format
         self._check_rate(sound)
         if self.stream.status != PLAYING:
             self.stream.play()
-        self.stream.put(pcm, flip_t + self.delay)
+        self.last_chunk = self._queued
+        self._queued += 1
+        self.stream.put(pcm, flip_t + self.delay, self.last_chunk)
 
     def stop(self) -> None:
         """Stop playback and drop what is still queued.
