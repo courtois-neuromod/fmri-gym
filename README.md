@@ -38,17 +38,10 @@ See [Machine requirements](MACHINE_REQUIREMENTS.md) for minimum and recommended
 hardware, and the [local test log](docs/local-testing/2026-09-14.md) for measurements
 and their scope.
 
-One system library comes first — PortAudio, which the audio layer loads at
-import, so without it every backend raises `OSError: PortAudio library not
-found`:
+With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-sudo apt install libportaudio2      # Debian/Ubuntu (macOS: brew install portaudio)
-```
-
-Then, with [uv](https://docs.astral.sh/uv/):
-
-```bash
+sudo apt install libportaudio2               # PortAudio; every backend needs it
 uv sync --extra dbp                          # .venv/ with the nine DBP backends, pinned by uv.lock
 uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
 ```

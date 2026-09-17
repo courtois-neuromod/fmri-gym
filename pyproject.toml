@@ -62,5 +62,10 @@ fmri-play = "fmri_play:main"
 packages = ["fmri_gym", "fmri_gym.adapters"]
 py-modules = ["fmri_play"]
 
+[tool.uv]
+# A never-true marker on classic `pygame`, so it is never installed and
+# pygame-ce (an API-compatible superset) owns the `pygame` module alone.
+override-dependencies = ["pygame; sys_platform == 'pygame-ce-only'"]
+
 [tool.ruff]
 line-length = 100
