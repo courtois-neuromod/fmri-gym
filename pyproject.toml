@@ -46,8 +46,10 @@ tilematch = ["tile-match-gym"]  # display + logging only
 triggers = ["pylsl", "pyserial", "pyparallel"]
 
 # The nine DBP picks (DBP_FINAL_LIST.md). Not installable from an index and
-# therefore not listed: craftium (prebuilt wheel on its GitHub releases) and
-# VGDL (a repo checkout on PYTHONPATH; see README "Running VGDL games").
+# therefore not listed: craftium (prebuilt wheel on its GitHub releases),
+# VGDL (a repo checkout on PYTHONPATH; see README "Running VGDL games") and
+# stk_gym (build the chrplr/stk-code fork, then install its `python/`; see
+# README "Running SuperTuxKart from the stk-code fork").
 dbp = [
     "fmri-gym[vizdoom,aigamestore,crafter,rushhour,baba,minihack,supertuxkart,overcooked]",
 ]
