@@ -61,11 +61,8 @@ if "ALSA_CONFIG_PATH" not in os.environ and os.path.exists(_SYSTEM_ALSA_CONF):
         os.environ["ALSA_CONFIG_PATH"] = _SYSTEM_ALSA_CONF
         os.environ.setdefault("ALSA_PLUGIN_DIR", plugin_dirs[0])
 
-import sounddevice  # Needs the ALSA environment above before PortAudio initializes.
+import sounddevice  # noqa: E402  (needs the ALSA env above at import time)
 
-# Stream lifecycle. ``NOT_STARTED`` is unused: we construct already
-# ``STOPPED`` and only start the PortAudio stream in :meth:`play`.
-NOT_STARTED = 0
 PLAYING = 1
 STOPPED = 2
 
@@ -104,23 +101,19 @@ class SoundDeviceGameBlockStream:
         :param channels: number of PCM channels.
         :param dtype: native sample format supported by sounddevice.
         """
-        self._channels = channels
-        self._dtype = np.dtype(dtype)
-        self._silence = 128 if self._dtype == np.dtype("uint8") else 0
         # Append/popleft are thread-safe; a full deque drops its oldest pending
         # chunk instead of allowing a slow output device to accumulate audio.
         self._blocks: deque[np.ndarray] = deque(maxlen=32)
         self._current: np.ndarray | None = None
         self._offset = 0
         self.status = STOPPED
-        self._closed = False
-        self._prime = np.full((int(0.1 * sample_rate), channels), self._silence, dtype=dtype)
+        self._prime = np.zeros((int(0.1 * sample_rate), channels), dtype=dtype)
         device = _preferred_output_device()
         print("audio out:", sounddevice.query_devices(device, "output")["name"],
-              f"({sample_rate:g} Hz, {channels}ch, {self._dtype.name})")
+              f"({sample_rate:g} Hz, {channels}ch, {np.dtype(dtype).name})")
         self.output_stream = sounddevice.OutputStream(
             samplerate=sample_rate, blocksize=block_size, latency=0.1,
-            device=device, channels=channels, callback=self.callback, dtype=self._dtype,
+            device=device, channels=channels, callback=self.callback, dtype=dtype,
             prime_output_buffers_using_stream_callback=False,
         )
 
@@ -132,16 +125,15 @@ class SoundDeviceGameBlockStream:
         :param time: PortAudio timing information (unused).
         :param status: PortAudio status flags (unused).
         """
-        outdata.fill(self._silence)
+        outdata.fill(0)
         if self.status != PLAYING:
             return
         written = 0
         while written < frames:
             if self._current is None:
-                try:
-                    self._current = self._blocks.popleft()
-                except IndexError:
+                if not self._blocks:
                     return
+                self._current = self._blocks.popleft()
             count = min(len(self._current) - self._offset, frames - written)
             outdata[written:written + count] = self._current[self._offset:self._offset + count]
             written += count
@@ -151,72 +143,29 @@ class SoundDeviceGameBlockStream:
                 self._offset = 0
 
     def put(self, block: np.ndarray) -> None:
-        """Copy native PCM for asynchronous playback; skip empty chunks.
+        """Queue a copy of one PCM chunk (engines reuse their buffers).
 
         :param block: array shaped ``(samples, channels)`` in the stream's dtype.
-        :raises ValueError: if shape or dtype does not match the stream.
-        :raises RuntimeError: if the device has already been closed.
         """
-        if self._closed:
-            raise RuntimeError("cannot queue audio on a closed stream")
-        block = np.asarray(block)
-        if block.ndim != 2 or block.shape[1] != self._channels:
-            raise ValueError(f"audio must have shape (samples, {self._channels})")
-        if block.dtype != self._dtype:
-            raise ValueError(f"audio dtype must stay {self._dtype}, got {block.dtype}")
-        if len(block):
-            self._blocks.append(block.copy(order="C"))
+        self._blocks.append(block.copy(order="C"))
 
     def play(self) -> None:
-        """Start playback once; close a device whose startup fails.
-
-        :raises RuntimeError: if the device has already been closed.
-        """
-        if self._closed:
-            raise RuntimeError("cannot start a closed audio stream")
-        if self.status == PLAYING:
-            return
-        # Each episode starts with the same slack, ahead of any real PCM.
-        self._current = self._prime if len(self._prime) else None
-        self._offset = 0
+        """Start playback, with the same 100 ms of slack ahead of the real PCM."""
+        self._current, self._offset = self._prime, 0
         self.status = PLAYING
-        try:
-            self.output_stream.start()
-        except BaseException:
-            self.close()
-            raise
+        self.output_stream.start()
 
     def stop(self) -> None:
         """Stop callbacks and discard queued and partially consumed samples."""
-        if self._closed:
-            return
         self.status = STOPPED
-        try:
-            self.output_stream.stop()
-        finally:
-            self.flush()
-
-    def flush(self) -> None:
-        """Drop pending samples while callbacks are stopped.
-
-        :raises RuntimeError: if playback is still running.
-        """
-        if self.status == PLAYING:
-            raise RuntimeError("stop audio before flushing its buffers")
+        self.output_stream.stop()
         self._blocks.clear()
-        self._current = None
-        self._offset = 0
+        self._current, self._offset = None, 0
 
     def close(self) -> None:
-        """Release the device once, even when stopping or playback failed."""
-        if self._closed:
-            return
-        self.status = STOPPED
-        try:
-            self.output_stream.close()
-        finally:
-            self._closed = True
-            self.flush()
+        """Stop playback and release the PortAudio stream."""
+        self.stop()
+        self.output_stream.close()
 
 
 class Audio:
@@ -240,30 +189,25 @@ class Audio:
         :param sound: a :class:`~fmri_gym.adapters.base.Sound`, or ``None`` for
             a frame with nothing to play (which leaves playback alone, rather
             than cutting off what is still queued).
+        :raises ValueError: if the PCM is not shaped ``(samples, channels)``.
         """
-        if sound is None:
+        if sound is None or not len(sound.pcm):
             return
-        pcm = np.asarray(sound.pcm)
-        if pcm.ndim != 2 or pcm.shape[1] == 0:
-            raise ValueError("audio must have shape (samples, channels)")
-        if not len(pcm):
-            return
+        pcm = sound.pcm
         # Chunk LENGTH is only a hint to PortAudio -- the callback splices
         # across queued blocks -- so a shorter final chunk must not count as a
         # format change and reopen the device mid-episode.
-        sound_format = (sound.sample_rate, pcm.shape[1], pcm.dtype)
+        sound_format = (sound.sample_rate, pcm.shape[1:], pcm.dtype)
         if sound_format != self.format:
+            if pcm.ndim != 2:
+                raise ValueError(f"audio must be shaped (samples, channels), got {pcm.shape}")
             self.close()
             self.stream = SoundDeviceGameBlockStream(
                 sound.sample_rate, pcm.shape[0], pcm.shape[1], dtype=pcm.dtype)
             self.format = sound_format
-        try:
-            self.stream.put(pcm)
-            if self.stream.status != PLAYING:
-                self.stream.play()
-        except BaseException:
-            self.close()
-            raise
+        self.stream.put(pcm)
+        if self.stream.status != PLAYING:
+            self.stream.play()
 
     def stop(self) -> None:
         """Stop playback and drop what is still queued.
@@ -276,8 +220,7 @@ class Audio:
 
     def close(self) -> None:
         """Release the output device (the audio half of a session teardown)."""
-        stream = self.stream
+        if self.stream is not None:
+            self.stream.close()
         self.stream = None
         self.format = None
-        if stream is not None:
-            stream.close()
