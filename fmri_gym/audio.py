@@ -69,27 +69,12 @@ import sounddevice  # noqa: E402  (needs the ALSA env above at import time)
 PLAYING = 1
 STOPPED = 2
 
-# How far gapless sound may sit off its onsets, on average, before it is
-# re-placed at the onset (a resync). The error is smoothed over chunks, so one
-# late or early frame (a slow step) plays on gapless, while a lasting offset or
-# a stall crosses the limit within a few chunks. On a vsync-locked display half
-# a refresh is added: frames land on refreshes, so onsets jitter by up to one
-# (35 fps on a 60 Hz monitor) and a resync can only anchor to one of them.
-_MAX_OFFSET = 0.003
-_SMOOTHING = 0.1                        # per chunk
-# Largest stretch or squeeze of a chunk that follows the flip clock: 0.2% is
-# 3.5 cents of pitch, below what a listener hears, and 2 ms per second of
-# correction -- more than the drift between a sound card and the system clock,
-# or a 59.92 Hz console core on a 60 Hz loop.
-_MAX_STRETCH = 2e-3
-# Fraction of the smoothed error corrected per chunk.
-_GAIN = 0.1
-# Samples per callback: small enough for a short device delay, large enough
-# not to underrun on a desktop audio server.
-_BLOCKSIZE = 256
-# The delay is the measured device delay plus one block, rounded up to this
-# step plus one step of margin: the same on a given rig from run to run.
-_DELAY_STEP = 0.010
+_MAX_OFFSET = 0.003                     # smoothed onset error tolerated before a resync
+_SMOOTHING = 0.1                        # of the onset error, per chunk
+_MAX_STRETCH = 2e-3                     # 3.5 cents of pitch, 2 ms of correction per second
+_GAIN = 0.1                             # of the smoothed error, corrected per chunk
+_BLOCKSIZE = 256                        # samples per callback
+_DELAY_STEP = 0.010                     # the audio delay is rounded up to this
 
 
 def _resample(pcm: np.ndarray, n: int) -> np.ndarray:
@@ -245,7 +230,6 @@ class SoundDeviceGameBlockStream:
             self._offset += count
             if self._offset == len(self._current):
                 self._current = None
-                # Continuity is counted in samples, not DAC times, which jitter.
                 self._end = (self._buffer + 1, 0) if pos == frames else (self._buffer, pos)
 
     def _take_due(self, t0: float, pos: int, frames: int) -> int:
@@ -299,12 +283,15 @@ class SoundDeviceGameBlockStream:
     def put(self, block: np.ndarray, onset: float, chunk: int) -> None:
         """Queue a copy of one chunk (engines reuse their buffers).
 
+        Chunks are stretched towards the callback's last error, positive when
+        gapless sound starts before its onsets, so a lengthened chunk pushes
+        the next ones later.
+
         :param block: array shaped ``(samples, channels)`` in the stream's dtype.
         :param onset: ``perf_counter`` time its first sample should play.
         :param chunk: its number in the block, for :attr:`log`.
         """
         n = len(block)
-        # Positive error: gapless chunks start before their onsets -> lengthen.
         self._carry += max(-_MAX_STRETCH * n, min(_MAX_STRETCH * n, _GAIN * self._error))
         extra = round(self._carry)
         self._carry -= extra
@@ -423,7 +410,8 @@ class Audio:
         :param frame_period: ``1 / fps``, or ``None`` for a turn-based block,
             whose steps are not paced.
         :param flip_period: the refresh period of a vsync-locked display, or
-            ``None``; half of it widens :data:`_MAX_OFFSET`.
+            ``None``. Frames land on refreshes, so their onsets jitter by up to
+            one; half of it widens :data:`_MAX_OFFSET` to match.
         """
         self._max_offset = _MAX_OFFSET + (flip_period or 0.0) / 2
         self._period, self._sound_s, self._steps = frame_period, 0.0, 0
@@ -494,8 +482,6 @@ class Audio:
             raise RuntimeError("audio: a game block has sound to play but the output is off "
                                '(--no-audio); set "audio": false on that phase')
         pcm = sound.pcm
-        # Chunk LENGTH varies (a shorter final chunk, 735/736-sample retro
-        # frames) and must not count as a format change that reopens the device.
         sound_format = (sound.sample_rate, pcm.shape[1:], pcm.dtype)
         if sound_format != self.format:
             if pcm.ndim != 2:

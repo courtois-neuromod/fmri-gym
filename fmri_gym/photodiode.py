@@ -413,8 +413,8 @@ def _readout(t: np.ndarray, x: np.ndarray, arrays: dict, summary: dict) -> None:
     summary["offset"] = summarize(arrays["offset_s"])
     if "click_dac" not in arrays:
         return
-    # Search from just before each click reached the DAC, not from the flip:
-    # the audio delay is tens of ms of room noise that would pass for an edge.
+    # From the click's DAC time, not the flip: the delay between them is room
+    # noise that would pass for an edge.
     sound = detect_edges(t, x[:, 1], arrays["click_dac"] - 0.010)
     arrays["sound_time"] = sound
     arrays["sound_offset_s"] = sound - arrays["flip_on"]

@@ -356,10 +356,9 @@ class Session:
         ## Reset environment and show initial state
         obs, info = adapter.reset(seed)
         self.display.call_on_flip(self.triggers.episode_start)
-        # The first frame stays up for one frame period like every other, paced
-        # from its flip, so a slow reset does not turn into a burst of catch-up
-        # frames. Its sound is not played: it is whatever the reset produced,
-        # not a step, and it would start the episode's sound off its flips.
+        # Paced from the flip, so a slow reset does not become a burst of
+        # catch-up frames. The reset frame's sound is not played: it is not a
+        # step's, and it would start the episode's sound off its flips.
         next_t = self._show(adapter, play_sound=False) + dt
 
         ## Loop over frames within episode
@@ -387,7 +386,6 @@ class Session:
             # The frame trigger goes out on the flip that shows this frame.
             self.display.call_on_flip(self.triggers.frame)
             flip_t = self._show(adapter, play_sound)
-            frames["audio_chunk"].append(self.audio.last_chunk)
 
             # Prefer env_action when an adapter translates UI meta-keys into a
             # different logged action (e.g. Rush Hour select+move -> Discrete).
@@ -400,6 +398,7 @@ class Session:
             frames["episode_id"].append(episode_id)
             frames["session_time"].append(t_step)
             frames["flip_time"].append(self.clock.from_perf(flip_t))
+            frames["audio_chunk"].append(self.audio.last_chunk)
             frames["wall_time"].append(self.clock.wall_time())
             frames["state_blob"].append(fs.blob)
             if self.triggers.enabled:
@@ -469,7 +468,6 @@ class Session:
         frames["variables"] = defaultdict(list)  # varname -> list, filled lazily
 
         ## Init loop over episodes
-        # Frames land on refreshes; the sound's placement must allow for that.
         locked = self.display.vsync and self.display.refresh_rate
         flip_period = 1 / self.display.refresh_rate if locked else None
         self.audio.start(frame_period=None if turn_based else dt, flip_period=flip_period)

@@ -164,10 +164,9 @@ class VizDoomAdapter(EnvAdapter):
         if isinstance(obs, dict) and "gamevariables" in obs:
             variables["gamevariables"] = np.asarray(obs["gamevariables"]).copy()
         if isinstance(obs, dict) and "audio" in obs:
-            # The PCM this step produced (logged even when playback is muted).
-            # Taken from obs, not sound(), because obs has a (zeroed) audio
-            # buffer on the terminal frame too, keeping this series the same
-            # length as actions and rewards.
+            # What the subject heard this frame. Taken from obs, not sound(),
+            # because obs has a (zeroed) audio buffer on the terminal frame too,
+            # keeping this series the same length as actions and rewards.
             variables["audio"] = np.asarray(obs["audio"]).copy()
         return FrameState(blob=None, variables=variables)
 

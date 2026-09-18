@@ -53,6 +53,8 @@ Before editing `session.py`, `display.py`, `keys.py`, `logging.py`, `base.py`, o
 
 - Keep it **additive and default-off**, so no existing backend changes behaviour.
 - Keep it **nameless**: no `if backend == "rushhour"`, no game ids, no engine imports.
+  This holds for the prose too -- a core file's comments and docstrings state the contract,
+  they don't cite the backend that happens to use it.
 - Prefer the **opt-in capability** pattern already in use: the adapter sets a flag or
   defines an optional method, and core reads it defensively.
 - Say so in the PR description. A core change is the part a reviewer must read closely.

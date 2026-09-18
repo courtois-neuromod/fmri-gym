@@ -181,8 +181,8 @@ class EnvAdapter:
         rate: no resampling, no copying, no timing -- the session places it
         against the flip. It should last about one frame period (``1 / fps``);
         a block where it does not stops with the fps that would fit. Playback
-        does not store it: to log it, surface it from :meth:`capture` too
-        (ViZDoom's ``audio``).
+        does not store it: to log the sound as well, return it from
+        :meth:`capture` too.
 
         :return: a :class:`Sound`, or ``None`` if there is nothing to play.
         """

@@ -78,9 +78,8 @@ def main() -> None:
         if backend == "vgdl" and args.vgdl_repo:
             phase.setdefault("repo", args.vgdl_repo)
 
-    # Triggers and audio first: a bad section, an unopenable port or an unusable
-    # sound output stops the run here, at the desk, before any window opens --
-    # not mid-session with a participant.
+    # Before the window: a bad section, an unopenable port or an unusable
+    # output must stop the run before the session starts.
     triggers = Triggers.from_config(config.get("triggers"))
     print(f"triggers: {triggers.status()}", file=sys.stderr)
     if args.dummy_trigger:
