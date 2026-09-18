@@ -520,6 +520,7 @@ Each session writes `data/<subject>_<timestamp>/`:
   | `actions`, `rewards`, `terminal`, `episode_id` | per frame |
   | `session_time`, `wall_time` | seconds since trigger (after the step); wall-clock Unix time |
   | `flip_time` | seconds since trigger of the **flip that showed the frame** (its onset; vsync-locked when the display reports `vsync: true`) |
+  | `pacing_reset_time`, `pacing_reset_late` | flips that ended a stall of more than a frame, and how many seconds late each was: the frame schedule restarted there instead of catching up with a burst of short frames. Empty in a clean block; otherwise warned about on the console when the block ends and again at exit, and listed in the manifest (`stalls`, and `n_pacing_resets` per phase) |
   | `key_time`, `key_name`, `key_down` | every key press/release during the block, stamped on arrival (~1 ms), independent of the frame grid |
   | `trigger` | the code sent on that frame's flip (only when a trigger backend is active) |
   | `audio_onset` | seconds since trigger that the frame's sound reached the DAC, NaN if none (only when the block played sound; with `audio_delay_ms`, `audio_resyncs`, `audio_trimmed_samples`) |
