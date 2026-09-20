@@ -433,7 +433,10 @@ class EnvAdapter:
 
 ## Curriculum format
 
-An ordered JSON list of **phases** (bare list or `{"curriculum": [...]}`):
+A **run** is one JSON file: a `"curriculum"` of phases, an optional
+`"triggers"` section (below), and `_`-prefixed notes. A bare list, an unknown
+top-level key or an unknown phase `type` stops the run at start-up with the
+reason.
 
 ```jsonc
 {"type": "fixation", "duration": 2.0}                 // "+" for N seconds

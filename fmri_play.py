@@ -16,29 +16,12 @@ and README.md for the config schema.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import time
 
 from fmri_gym import Audio, Display, Session, Triggers
-
-
-def load_config(path: str) -> dict:
-    """Load a config file: a dict with ``"curriculum"`` and optional sections.
-
-    ``"triggers"`` is the start sync + trigger codes (:mod:`fmri_gym.triggers`);
-    ``_``-prefixed keys are notes. One shape only -- a bare list is refused.
-
-    :param path: JSON file path.
-    :return: the config dict.
-    :raises ValueError: if the file is not a dict with a ``"curriculum"`` list.
-    """
-    with open(path) as f:
-        config = json.load(f)
-    if not isinstance(config, dict) or not isinstance(config.get("curriculum"), list):
-        raise ValueError(f'{path}: expected a JSON object with a "curriculum" list')
-    return config
+from fmri_gym.config import load_config, validate_config
 
 
 def main() -> None:
@@ -62,6 +45,9 @@ def main() -> None:
     args = p.parse_args()
 
     config = load_config(args.curriculum)
+    problems = validate_config(config)  # the editor's Check, so a file edited by hand gets it too
+    if problems:
+        raise ValueError(f"{args.curriculum}: " + "; ".join(problems))
     curriculum = config["curriculum"]
     w, h = (int(x) for x in args.size.lower().split("x"))
     outdir = args.outdir or os.path.join(
