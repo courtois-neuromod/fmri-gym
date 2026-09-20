@@ -17,8 +17,7 @@ participants -- replay each other's episodes unless a phase pins its
 ``"seed"``.
 
 The names follow BIDS; the contents do not yet (a manifest and ``.npz`` blocks
-in a folder per run, not ``_beh.tsv`` + ``_events.tsv`` sidecars). Pure: no
-pygame, no Qt.
+in a folder per run, not ``_beh.tsv`` + ``_events.tsv`` sidecars).
 """
 
 from __future__ import annotations

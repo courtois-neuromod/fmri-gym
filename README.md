@@ -90,6 +90,19 @@ VGDL_REPO=../language_and_experience PYTHONPATH=../language_and_experience \
 uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
 ```
 
+A run is a JSON file and a session is a `.sh` script (below). Write them by
+hand, or design them in the editor -- either way `fmri-play` reads the same
+files, and refuses one it cannot play. `--gui` opens the editor on a run, a
+session, or a new run; **Play** starts what it shows. Its Launch tab holds
+this launch's flags (subject, session, monitor, window, the test switches),
+which belong to the launch, not to the files. The editor is the `gui` extra:
+
+```bash
+uv sync --extra dbp --extra gui
+uv run fmri-play --gui --curriculum configs/demo_meg.json
+uv run fmri-play --gui --session configs/ses1.sh
+```
+
 Drop `--dummy-trigger` for a real session (then press SPACE, then wait for the
 `=` scanner trigger). For VGDL setup see [Running VGDL games](#running-vgdl-games).
 
@@ -159,7 +172,8 @@ Runtime flow: experimenter screen (**SPACE**) → "Waiting for scanner..." →
 scanner **trigger `=`** (anchors the session clock) → curriculum phases → done.
 `ESC` quits early but still saves. Flags: `--size 1280x1024`, `--fullscreen`,
 `--monitor 1` (which screen, when there are several), `--no-vsync` (see
-[Timing](#timing-what-is-stamped-when)).
+[Timing](#timing-what-is-stamped-when)). The editor opens on its Launch tab,
+fullscreen ticked and the monitor picked there.
 
 ## Running stable-retro games
 
@@ -438,6 +452,34 @@ A **run** is one JSON file: a `"curriculum"` of phases, an optional
 `"triggers"` section (below), and `_`-prefixed notes. A bare list, an unknown
 top-level key or an unknown phase `type` stops the run at start-up with the
 reason.
+
+One config is one run. A whole scanning session is a plain shell script with
+one line per run, in order -- so every run is a process of its own, with a
+fresh interpreter, display and trigger port:
+
+```sh
+#!/bin/sh
+# fmri-gym session: one line per run, in order.
+set -e
+SES=$(uv run fmri-play --subject sub-01 --next-ses)
+uv run fmri-play --curriculum configs/pong.json --subject sub-01 --ses "$SES" --size 1024x768
+./scripts/localizer.sh "$SES"
+# uv run fmri-play --curriculum configs/mario.json --subject sub-01 --ses "$SES" --size 1024x768
+```
+
+The `SES=` line picks the session once, so every run lands in it; write a
+number there (`SES=002`) to resume a stopped session in its own session.
+
+`set -e` stops it at the first run that fails or is quit with ESC (`fmri-play`
+then exits with status 3). A line that is not an `fmri-play` run is any command
+of yours, as typed; a commented line is a skipped run, which is how a stopped
+session is resumed. Write it by hand, or in `--gui`, whose Session manager tab
+has two panels, each a form and the text it stands for: Session design (the
+list of lines -- add an existing or a new config, an external script; repeat,
+reorder, skip, "Start here" -- or the script itself) and Run design (the
+selected run's phases, or its JSON). File > Open takes a `.sh` like a `.json`,
+and Save writes the script and the configs you edited. Run it from the repo root:
+`sh configs/ses1.sh`.
 
 ```jsonc
 {"type": "fixation", "duration": 2.0}                 // "+" for N seconds

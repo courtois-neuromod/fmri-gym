@@ -54,13 +54,15 @@ playwright install chromium   # then set "browser_channel": null in the phase if
 uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/<game>.json
 ```
 
-| Flag / key         | What it does                                                    |
-| ------------------ | --------------------------------------------------------------- |
-| `--subject sub-01` | Subject id used in the output folder name                       |
-| `--monitor 1`      | Which screen to open on, when there are several (0 = the first) |
-| **SPACE**          | Advance past the experimenter screen                            |
-| `=`                | Scanner trigger (anchors the session clock)                     |
-| **ESC**            | Quit early; data is still saved                                 |
+| Flag / key          | What it does                                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--subject sub-01`  | Subject id used in the output folder name                                                                                                                     |
+| `--gui`             | Open the config editor first (sessions of runs, keys, triggers, load/save); Run starts the session. Needs the `gui` extra (`uv sync --extra dbp --extra gui`) |
+| `--monitor 1`       | Which screen to open on, when there are several (0 = the first)                                                                                               |
+| `--session ses1.sh` | With `--gui`: open a session script (one line per run) in the editor. To play one: `sh ses1.sh`                                                               |
+| **SPACE**           | Advance past the experimenter screen                                                                                                                          |
+| `=`                 | Scanner trigger (anchors the session clock)                                                                                                                   |
+| **ESC**             | Quit early; data is still saved                                                                                                                               |
 
 Each config is a short curriculum: message → fixation → game (~300 s, auto-restarts
 on game-over) → fixation. Output lands in `data/sub-01/ses-001/beh/sub-01_ses-001_task-<config>_run-001/`: sessions and runs number themselves (see README "Output & data format").

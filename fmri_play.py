@@ -8,6 +8,8 @@ Usage:
     python fmri_play.py --subject sub-01 --curriculum my.json
     python fmri_play.py --subject sub-01 --curriculum my.json --dummy-trigger   # testing
     python fmri_play.py --subject sub-01 --curriculum my.json --no-audio        # mute all games
+    python fmri_play.py --gui [--curriculum my.json]                            # edit, then run
+    python fmri_play.py --gui --session ses1.sh                                 # edit a session of runs
 
 See configs/demo_mixed.json for a curriculum that mixes all three backends,
 and README.md for the config schema.
@@ -25,10 +27,48 @@ import sys
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
 from fmri_gym import Audio, Display, Session, Triggers, bids  # noqa: E402 (after the line above)
-from fmri_gym.config import EXIT_QUIT, load_config, validate_config  # noqa: E402
+from fmri_gym.config import EXIT_QUIT, load_config, new_config, validate_config  # noqa: E402
 from fmri_gym.display import list_monitors, monitor_label  # noqa: E402
 
 import pygame  # noqa: E402
+
+#: The flags the editor's Launch tab shows and hands back. They describe one
+#: launch, not the task, so they are never written to the config file.
+LAUNCH_FLAGS = ("subject", "ses", "data_root", "size", "fullscreen", "monitor", "no_vsync",
+                "no_audio", "dummy_trigger")
+
+
+def _edit(args: argparse.Namespace) -> dict | None:
+    """Open the editor on ``--curriculum`` (or a new config); Run hands back what to play.
+
+    :param args: parsed flags; the launch flags pre-fill the editor and are
+        overwritten with what it showed when Run was pressed, and ``curriculum``
+        with the config's path (new and unsaved, it is the name it would get).
+    :return: the config to run, or ``None`` if the editor was closed. For a
+        session of several runs it does not return: this process becomes the
+        session script the editor saved, which starts one ``fmri_play`` per run.
+    """
+    from fmri_gym.gui import edit_config
+
+    config = load_config(args.curriculum) if args.curriculum else new_config()
+    # The editor starts fullscreen, as a session in the scanner needs; untick it to pilot at
+    # the desk. (Only here: on the command line --fullscreen stays opt-in, as it always was.)
+    launch = {k: getattr(args, k) for k in LAUNCH_FLAGS} | {"fullscreen": True}
+    try:
+        picked = edit_config(config, args.curriculum, launch, session=args.session)
+    except KeyboardInterrupt:
+        print("interrupted: the editor is closed and nothing was run; edits since the last "
+              "Save are not written", file=sys.stderr)
+        sys.exit(130)  # the shell's status for a Ctrl+C
+    if picked is None:
+        return None
+    config, args.curriculum, launch, script = picked
+    if script is not None:
+        os.execvp(script[0], script)
+    for key, value in launch.items():
+        setattr(args, key, value)
+    return config
+
 
 def _fold_seeds(curriculum: list[dict], label: str) -> dict:
     """Give each game phase that pins no ``"seed"`` the one derived for this run.
@@ -108,7 +148,11 @@ def _parser() -> argparse.ArgumentParser:
     """The command line; ``--gui`` shows the launch flags as a form."""
     p = argparse.ArgumentParser(description="Run any gym game as an fMRI task.")
     p.add_argument("--subject", default="sub-test", help="BIDS subject: sub-<letters/digits>")
-    p.add_argument("--curriculum", required=True, help="config JSON (see README)")
+    p.add_argument("--curriculum", help="config JSON (see README); required without --gui")
+    p.add_argument("--gui", action="store_true",
+                   help="open the config editor first; Run there starts the session")
+    p.add_argument("--session", help="with --gui: a session script (.sh, one line per run) to "
+                   "open in the editor. To play one, run it: sh <session>.sh")
     p.add_argument("--data-root", default="data",
                    help="where the BIDS tree goes: <root>/sub-XX/ses-NNN/beh/<run>/")
     p.add_argument("--ses", type=int,
@@ -142,7 +186,17 @@ def main() -> None:
         subject = bids.subject_label(args.subject)
         print(f"{bids.next_session(args.data_root, subject):03d}")
         return
-    config = load_config(args.curriculum)
+    if args.session and not args.gui:
+        p.error(f"--session opens a session in the editor (--gui); to play it, run it: "
+                f"sh {args.session}")
+    if args.session and args.curriculum:
+        p.error("--session and --curriculum: the session already names its configs")
+    if not args.gui and not args.curriculum:
+        p.error("--curriculum is required (or --gui to start from a new config)")
+
+    config = _edit(args) if args.gui else load_config(args.curriculum)
+    if config is None:
+        return
     problems = validate_config(config)  # the editor's Check, so a file edited by hand gets it too
     if problems:
         raise ValueError(f"{args.curriculum}: " + "; ".join(problems))
