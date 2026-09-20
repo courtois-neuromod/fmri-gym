@@ -299,6 +299,18 @@ class Session:
         onset = self.clock.session_time()
 
         responses = []
+        try:
+            self._ask(questions, n_points, responses)
+        finally:  # a quit mid-survey keeps the answers already confirmed
+            self.logger.log_phase({"index": index, "type": "survey",
+                                   "onset": onset, "offset": self.clock.session_time(),
+                                   "responses": responses})
+
+    def _ask(self, questions: list[str], n_points: int, responses: list[dict]) -> None:
+        """Append each confirmed Likert answer to ``responses``.
+
+        :raises KeyboardInterrupt: on window close or ESC.
+        """
         for q in questions:
             value = (n_points + 1) // 2
             confirmed = False
@@ -323,10 +335,6 @@ class Session:
                 time.sleep(0.005)
             responses.append({"question": q, "value": value,
                               "session_time": self.clock.session_time()})
-
-        self.logger.log_phase({"index": index, "type": "survey",
-                               "onset": onset, "offset": self.clock.session_time(),
-                               "responses": responses})
 
     def _episode(
         self,
@@ -545,12 +553,16 @@ class Session:
         self.stalls.append(stall)
         print(_stall_warning(stall), file=sys.stderr)
 
-    def run(self) -> None:
+    def run(self) -> bool:
         """Run the full curriculum: trigger wait, then each phase in order.
 
         Always writes the session manifest in ``finally``, including after an
         interrupt (partial data).
+
+        :return: ``True`` if the curriculum played to its end, ``False`` if it
+            was quit, so a caller can report a run that stopped early.
         """
+        completed = False
         handlers = {"fixation": self._fixation, "message": self._message,
                     "game": self._game, "survey": self._survey}
         try:
@@ -564,6 +576,7 @@ class Session:
 
             self.display.draw_text("Done. Thank you!")
             time.sleep(2.0)
+            completed = True
         except KeyboardInterrupt:
             print("Interrupted -- saving partial data.", file=sys.stderr)
         finally:
@@ -576,3 +589,4 @@ class Session:
             print(f"Manifest: {manifest_path}")
             for stall in self.stalls:
                 print(_stall_warning(stall), file=sys.stderr)
+        return completed

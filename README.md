@@ -158,7 +158,8 @@ playwright, box2d-py, MuJoCo GL, ROM import).
 Runtime flow: experimenter screen (**SPACE**) → "Waiting for scanner..." →
 scanner **trigger `=`** (anchors the session clock) → curriculum phases → done.
 `ESC` quits early but still saves. Flags: `--size 1280x1024`, `--fullscreen`,
-`--no-vsync` (see [Timing](#timing-what-is-stamped-when)), `--save-pixels` (ALE only; see below).
+`--monitor 1` (which screen, when there are several), `--no-vsync` (see
+[Timing](#timing-what-is-stamped-when)).
 
 ## Running stable-retro games
 
@@ -452,13 +453,19 @@ reason.
  "max_duration": 300.0,         // hard wall-clock safety cap (episode mode)
  "fps": 30,                     // target game frames/second
  "turn_based": false,           // step only on a key PRESS, not per frame (grid/toy_text games)
- "seed": 1234,                  // base RNG seed (optional)
+ "seed": 1234,                  // optional base seed: episodes play with seed, seed+1, ...
+                                // Pinned, every participant and run gets the same episodes.
+                                // Left out, it is derived from the run (sub/ses/task/run) and
+                                // the phase, so no two runs replay each other's; fmri-play
+                                // prints each phase's seed, the editor shows it (and Pin
+                                // copies it in), the manifest logs it
+
  "state_stride": 1,             // save a full savestate every K frames (see below)
  "state": "Level1",             // retro: named savestate/level (optional)
  "scenario": null,              // retro: scenario name (optional)
  "level": 0,                    // vgdl: level index; also uses "game","block_size"
  "keys": {"LEFT": 0, "RIGHT": 1}, // override keyboard->action map (see below)
- "save_pixels": false}          // ALE: also store lossless pixels (see warning)
+ "save_pixels": false}          // also store lossless pixels, where the backend can
 ```
 
 ### Keymaps
@@ -530,33 +537,29 @@ the recording gets (full example: `configs/demo_meg.json`):
 
 | `sync.mode` | after the experimenter's SPACE… |
 |---|---|
-| `wait` | wait for `key` (default `"="`) from the trigger box, then start |
-| `send` | send the `scanner_start` code on the trigger line, wait `delay` s, then start |
+| `wait` | wait for the key the trigger box types (`key`), then start |
+| `send` | send the start code on the trigger line, wait `delay` s, then start |
 | `none` | start immediately |
 
 `backend`: `null`, `lsl`, `serial` or `parallel` — `uv sync --extra triggers`
 (pylsl / pyserial / pyparallel); `port` for serial/parallel, `lsl_stream_name`
-for LSL. A backend that cannot be opened stops the run before the window
-opens, with the reason and the fix.
+for LSL.
 
-Nothing here is tied to a modality — rigs differ, so the config says what
-happens and the code enforces only that it is consistent (`send` needs a
-backend). The usual choices:
+Which of these a rig needs varies: the scanner may type a key at every volume,
+or start its recording when the stimulus PC sends a code, or neither. So the
+config says what happens rather than naming a modality, and the editor offers
+a template per common setup:
 
 | setup | `sync.mode` | `backend` |
 |---|---|---|
-| fMRI, trigger box types `=` | `wait` | `null` (no trigger line) |
-| MEG/EEG, acquisition started from the trigger input | `send` | `serial` / `parallel` / `lsl` |
-| MEG/EEG, acquisition started by hand, stimulus PC gets the scanner pulse | `wait` | `serial` / `parallel` / `lsl` |
+| the scanner types a key at every volume | `wait` | `null` (no trigger line) |
+| the recording starts from the trigger input | `send` | `serial` / `parallel` / `lsl` |
+| the recording is started by hand, the PC gets the scanner's key | `wait` | `serial` / `parallel` / `lsl` |
 | bench test, nothing connected | `none` | `null` |
 
-Leaving `sync.mode` or `backend` out is allowed and defaults to `wait` /
-`null` (the safest pair), but never silently: the experimenter screen and the
-console show the trigger status of the run (`NOT SET in config: sync.mode,
-backend`), and the manifest keeps it under `triggers.defaulted`. The worst
-outcome is a session that runs fine and turns out to have sent no triggers.
-`--dummy-trigger` announces itself the same way (and is recorded as
-`dummy_trigger` in the manifest).
+Leaving `sync.mode` or `backend` out defaults to `wait` / `null`, and says so:
+the experimenter screen, the console and the manifest all report it
+(`NOT SET in config: sync.mode, backend`), as they do for `--dummy-trigger`.
 
 What is sent: `task_start` when the clock anchors, `episode_start` at each
 reset, one code per frame (`"frame_every": N` to thin, `"on_frame": false` to
@@ -580,7 +583,9 @@ actually obtained (`vsync`, measured at start-up; `refresh_rate`).
 - Before a MEG/EEG session, check that the rig locks to the refresh:
   `python -m fmri_gym.display --fullscreen` (verdict LOCKED / NOT locked; if
   not, use fullscreen and disable the desktop compositor). `--no-vsync` turns
-  the request off.
+  the request off. On a rig with several screens, pass the session's
+  `--monitor` here and to the photodiode too: refresh, vsync and the photon
+  offset belong to the monitor.
 - Once per rig, measure the constant flip-to-photon offset with a photodiode on
   the screen, then subtract it from `flip_time` and the frame triggers:
 
@@ -600,14 +605,28 @@ actually obtained (`vsync`, measured at start-up; `refresh_rate`).
 
 ## Output & data format
 
-Each session writes `data/<subject>_<timestamp>/`:
+Each run writes one folder, named and numbered as BIDS does:
+
+```
+data/sub-01/ses-001/beh/sub-01_ses-001_task-pong_run-001/
+data/sub-01/ses-001/beh/sub-01_ses-001_task-pong_run-002/     the same task again
+data/sub-01/ses-001/beh/sub-01_ses-001_task-crafter_run-001/
+```
+
+The task is the config's file name (letters and digits); `--subject` must be
+`sub-<letters/digits>`. `--ses` and `--run` pin the numbers; left out, the
+folders are the counters: the subject's next free session, then the next free
+run of that task in it (so delete a failed run's folder and its number is free
+again; a `--run` that already has data is refused). `--data-root` moves the
+tree (default `data`). The names follow BIDS, the contents not yet (no
+`_beh.tsv` / `_events.tsv`). Each folder holds:
 
 - **`manifest.json`** — subject, curriculum, trigger epoch, per-phase
   onsets/offsets (+ survey responses; onsets are flip times), the `display`
   actually opened (size, `vsync`, `refresh_rate`, driver), the `triggers`
   settings + lifecycle triggers sent (+ what the config left `defaulted`), the
-  `audio` output (device, measured device delay, chosen delay) and
-  `dummy_trigger`.
+  `audio` output (device, measured device delay, chosen delay),
+  `dummy_trigger`, the `seeds` (each game phase derived or pinned) and the `versions` of pygame and SDL.
 - **`block-NN_<backend>_<game>.npz`** — one per game block, uniform schema:
 
   | key | meaning |
@@ -622,7 +641,7 @@ Each session writes `data/<subject>_<timestamp>/`:
   | `states` | per-frame savestate blob (object array; `None` if engine has none) |
   | `episode_seeds` | RNG seed per episode |
   | `backend`, `game` | provenance |
-  | *backend vars* | `ram` (ale/retro), `info_*` (retro decoded score/lives/…), `obs` (gym), `screen_index` (ale `--save-pixels`) |
+  | *backend vars* | `ram` (ale/retro), `info_*` (retro decoded score/lives/…), `obs` (gym), `screen_index` (ale, with `"save_pixels"`) |
 
 ### Reconstruction (all verified bit-exact)
 
@@ -659,7 +678,7 @@ r.unwrapped.em.set_state(d["states"][10]); r.unwrapped.data.update_ram()
 > 86 KB with `state_stride: 15`** (~9×). Analysis variables (RAM, `info_*`) are
 > always logged every frame regardless of stride.
 >
-> ⚠️ **`--save-pixels` (ALE)** stores the screen every frame. It's lossless
+> ⚠️ **`"save_pixels": true`** stores the screen every frame. It's lossless
 > (indexed palette; `palette[screen_index] == RGB`) and zlib-friendly
 > (~0.25 KB/frame) — but unnecessary, since per-frame state already
 > reconstructs pixels. Prints a loud warning when enabled.

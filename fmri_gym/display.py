@@ -4,33 +4,27 @@ Engine-agnostic -- it only ever receives RGB numpy frames (H,W,3) from
 env.render(), so ALE / stable-retro / any gym env all present identically:
 letterboxed and centered in one fixed window, giving uniform screen geometry.
 
-Timing model (the PsychoPy one)
--------------------------------
+Timing
+------
 Everything is composed on an off-screen canvas and shown by one
-:meth:`Display._present`, which asks SDL for a **vsync-locked** flip. When the
-driver honours it, ``pygame.display.flip()`` blocks until the vertical blank
-at which the new image starts scanning out, so the stamp taken right after it
-(:attr:`last_flip`, returned by every ``draw_*``) is the onset of what is on
-screen, and callbacks queued with :meth:`call_on_flip` run at that instant --
-which is where MEG/EEG frame triggers are sent.
+:meth:`Display._present`, which asks SDL for a vsync-locked flip:
+``pygame.display.flip()`` then blocks until the vertical blank at which the
+new image starts scanning out. The stamp taken right after it
+(:attr:`last_flip`, returned by every ``draw_*``) is that onset, and callbacks
+queued with :meth:`call_on_flip` run at it -- where frame triggers are sent.
 
-Two facts make this robust rather than hopeful:
-
-* A flip only blocks when the swap chain is full. A program that sleeps
-  between frames flips into an empty chain and gets its stamp back at once,
-  before the blank. So while the session waits -- for the next frame tick, a
-  key, a fixation to elapse -- it calls :meth:`idle`, which **re-presents the
-  current canvas every refresh**, keeping the chain primed so every flip,
-  including the next real frame's, lands on a blank.
-* :attr:`vsync` is **measured**, not read from a flag: at start-up a burst of
-  flips is timed and the flag is set only if they actually block for about a
-  refresh period. (SDL's headless ``dummy`` driver claims vsync and never
-  blocks; some compositors do the same.) Without it, :meth:`idle` sleeps in
-  1 ms slices instead and frame onsets are simply what the flip reported.
+A flip only blocks when the swap chain is full, so :meth:`idle` re-presents
+the current canvas every refresh while the session waits, keeping the chain
+primed. :attr:`vsync` is measured at start-up, not read from a flag: a burst
+of flips is timed, and the flag is set only if they block for about a refresh
+period (SDL's headless driver and some compositors claim vsync and never
+block). Without it, :meth:`idle` sleeps in 1 ms slices and frame onsets are
+what the flip reported.
 
 The remaining unknown is any constant offset between the flip returning and
 photons (swap-chain depth, panel latency); that is what a photodiode is for.
-``python -m fmri_gym.display`` reports what a given machine achieves.
+``python -m fmri_gym.display`` reports what a given machine achieves, on the
+``monitor`` the session uses (:func:`list_monitors`).
 """
 
 from __future__ import annotations
@@ -64,6 +58,7 @@ class Display:
         fullscreen: bool = False,
         caption: str = "fmri-gym",
         vsync: bool = True,
+        monitor: int = 0,
     ) -> None:
         """Create and show the display window.
 
@@ -73,7 +68,9 @@ class Display:
         :param fullscreen: if ``True``, open in fullscreen mode.
         :param caption: window title string.
         :param vsync: ask for a flip locked to the vertical blank (default).
+        :param monitor: the monitor to open on, by :func:`list_monitors` index.
         """
+        self._monitor = monitor
         self._req_size = size
         self._fullscreen = fullscreen
         self._caption = caption
@@ -112,16 +109,17 @@ class Display:
         """
         size = (0, 0) if self._fullscreen else self._req_size
         flags = pygame.FULLSCREEN if self._fullscreen else 0
+        at = self._monitor
         if not self._want_vsync:
-            return pygame.display.set_mode(size, flags)
-        screen = _try_mode(size, flags, vsync=1)
+            return pygame.display.set_mode(size, flags, display=at)
+        screen = _try_mode(size, flags, vsync=1, display=at)
         if screen is not None and pygame.display.is_vsync():
             return screen
         logical = screen.get_size() if screen is not None else self._req_size
-        scaled = _try_mode(logical, flags | pygame.SCALED, vsync=1)
+        scaled = _try_mode(logical, flags | pygame.SCALED, vsync=1, display=at)
         if scaled is not None:
             return scaled
-        return pygame.display.set_mode(size, flags)
+        return pygame.display.set_mode(size, flags, display=at)
 
     def _flips_block(self, n: int = 24) -> bool:
         """Measure whether a burst of flips waits for the blank.
@@ -147,9 +145,9 @@ class Display:
     def call_on_flip(self, fn: Callable[..., Any], *args: Any) -> None:
         """Queue ``fn(*args)`` to run right after the next flip returns.
 
-        One-shot, like PsychoPy's ``callOnFlip``: with vsync the flip returns
-        at the vertical blank, so this is the closest a program gets to "the
-        moment the frame appears" -- where a frame trigger belongs.
+        One-shot. With vsync the flip returns at the vertical blank, so this is
+        the closest a program gets to the moment the frame appears -- where a
+        frame trigger belongs.
 
         :param fn: callable to run.
         :param args: its positional arguments.
@@ -284,10 +282,10 @@ class Display:
     def describe(self) -> dict[str, Any]:
         """What was actually opened, for the manifest.
 
-        :return: size, fullscreen, measured vsync, refresh rate, SDL driver.
+        :return: size, fullscreen, monitor, measured vsync, refresh rate, SDL driver.
         """
         return {"size": list(self.size), "requested_size": list(self._req_size),
-                "fullscreen": self._fullscreen, "vsync": self.vsync,
+                "fullscreen": self._fullscreen, "monitor": self._monitor, "vsync": self.vsync,
                 "refresh_rate": self.refresh_rate, "driver": pygame.display.get_driver()}
 
     def measure_flips(self, n: int = 240) -> dict[str, float]:
@@ -315,12 +313,31 @@ class Display:
         pygame.quit()
 
 
-def _try_mode(size: tuple[int, int], flags: int, vsync: int) -> pygame.Surface | None:
+def _try_mode(size: tuple[int, int], flags: int, vsync: int,
+              display: int) -> pygame.Surface | None:
     """``set_mode`` that returns ``None`` instead of raising."""
     try:
-        return pygame.display.set_mode(size, flags, vsync=vsync)
+        return pygame.display.set_mode(size, flags, display=display, vsync=vsync)
     except pygame.error:
         return None
+
+
+def monitor_label(index: int, monitor: tuple[int, int, int]) -> str:
+    """``"1: 1920x1080 @ 60 Hz"``: a monitor as :func:`list_monitors` gives it."""
+    w, h, hz = monitor
+    return f"{index}: {w}x{h} @ {hz or '?'} Hz"
+
+
+def list_monitors() -> list[tuple[int, int, int]]:
+    """This machine's monitors, in ``monitor`` index order: ``(width, height, Hz)`` each."""
+    started = pygame.display.get_init()
+    pygame.display.init()
+    try:
+        return [(w, h, hz) for (w, h), hz in zip(pygame.display.get_desktop_sizes(),
+                                                  pygame.display.get_desktop_refresh_rates())]
+    finally:
+        if not started:  # an open window needs it; a caller that only asked does not
+            pygame.display.quit()
 
 
 def _selftest() -> None:
@@ -330,10 +347,12 @@ def _selftest() -> None:
     p.add_argument("--size", default="1024x768")
     p.add_argument("--fullscreen", action="store_true")
     p.add_argument("--no-vsync", action="store_true")
+    p.add_argument("--monitor", type=int, default=0)
     p.add_argument("--n", type=int, default=240)
     args = p.parse_args()
     w, h = (int(x) for x in args.size.lower().split("x"))
-    d = Display((w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync)
+    d = Display((w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync,
+                monitor=args.monitor)
     info = d.describe()
     stats = d.measure_flips(args.n)
     d.close()
