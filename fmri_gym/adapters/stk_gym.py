@@ -24,7 +24,9 @@ mean, 2.9 ms p95 -- well inside 16.7 ms. If steps did run long, session.py
 catches up rather than drops frames, and ``session_time`` records it.
 
 Needs a real OpenGL display (the frame is the game's own rendering) and the
-fork's binary: ``STK_ENV_BIN``, or the fork's ``build/bin`` found by ``stk_gym``.
+game itself, which ``pip install supertuxkart-gym`` brings: the wheel fetches a
+prebuilt binary and a trimmed asset pack once, and a fork checkout beside it is
+preferred over that download. ``STK_ENV_BIN`` overrides both.
 Not supported: the pystk2 backend's ``num_kart`` spelling (it is ``num_karts``
 here, the game's), and a different track per episode (one process, one track).
 """
