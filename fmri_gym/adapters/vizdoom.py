@@ -180,6 +180,11 @@ class VizDoomAdapter(EnvAdapter):
     def render(self) -> np.ndarray:
         return np.asarray(self.env.render())
 
+    def native_fps(self) -> float:
+        """Doom's tic rate (35) over the tics one step advances (``env_kwargs.frame_skip``)."""
+        u = self.env.unwrapped
+        return u.game.get_ticrate() / u.frame_skip
+
     def sound(self) -> Sound | None:
         """Return the frame's Doom audio, or ``None`` if there is none to play.
 

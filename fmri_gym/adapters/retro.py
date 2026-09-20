@@ -90,6 +90,10 @@ class RetroAdapter(EnvAdapter):
         blob = u.em.get_state() if want_blob else None
         return FrameState(blob=blob, variables=variables)
 
+    def native_fps(self) -> float:
+        """The core's own frame rate (59.92 for Genesis, 60.10 for NES), one step per frame."""
+        return self.env.unwrapped.em.get_screen_rate()
+
     def sound(self) -> Sound | None:
         """Return native emulator PCM for the session's audio output.
 

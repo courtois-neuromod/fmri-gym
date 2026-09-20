@@ -32,6 +32,12 @@ if TYPE_CHECKING:
 
 TRIGGER_KEY = "="
 EXPERIMENTER_KEY = " "
+#: Steps per second of a phase that asks for none, on an engine with no clock of
+#: its own (a grid world, a puzzle): the screen's business, not the game's.
+_DEFAULT_FPS = 30
+#: How far ``fps`` may sit from the engine's own rate and still count as real
+#: speed: what the audio output absorbs by resampling.
+_SAME_SPEED = 2e-3
 
 
 class Clock:
@@ -459,7 +465,6 @@ class Session:
         mode = phase.get("mode", "duration")
         duration = phase.get("duration", 30.0)
         n_episodes = phase.get("n_episodes", 1)
-        fps = phase.get("fps", 30)
         base_seed = phase.get("seed", 1000 + index)
         # Save a full savestate every `state_stride` frames (and always at each
         # episode's first frame, the replay anchor). 1 = every frame (default);
@@ -467,7 +472,6 @@ class Session:
         # whose states are ~1 MB/frame. Between anchors, frames are still
         # reconstructable by restoring the last anchor and replaying actions.
         state_stride = max(1, int(phase.get("state_stride", 1)))
-        dt = 1.0 / fps
         cap = duration if mode == "duration" else phase.get("max_duration", 300.0)
         # Turn-based games (grid worlds: FrozenLake, CliffWalking, Taxi, ...) must
         # advance ONE step per deliberate key PRESS, not once per frame. In a
@@ -485,6 +489,9 @@ class Session:
         self.display.draw_text(
             f"Loading {phase.get('text') or phase.get('game', 'game')} …")
         adapter = get_adapter(backend, phase)
+        fps = self._fps(adapter, phase)
+        dt = 1.0 / fps
+        speed = {} if turn_based else self._speed(adapter, fps, index, phase["game"])
 
         ## Frame logging
         frames = defaultdict(list)
@@ -533,11 +540,48 @@ class Session:
             "n_episodes": episode_id, "n_frames": len(frames["action"]),
             "n_pacing_resets": len(frames["pacing_reset"]),
             "total_reward": sum(float(r) for r in frames["reward"]),
-            "data_file": path.split("/")[-1],
+            "data_file": path.split("/")[-1], **speed,
         })
         self._note_stalls(index, phase["game"], frames["pacing_reset"])
         if user_quit:
             raise KeyboardInterrupt
+
+    def _fps(self, adapter: EnvAdapter, phase: dict) -> float:
+        """The block's steps per second: the phase's ``fps``, or the engine's own rate.
+
+        An engine with a clock of its own (:meth:`EnvAdapter.native_fps`) plays
+        at real speed, and makes one step's sound per step, only at that rate --
+        so it is what a phase asking for no other gets.
+
+        :param adapter: the block's adapter.
+        :param phase: the game phase.
+        :return: steps per second (:data:`_DEFAULT_FPS` for an engine with no
+            clock of its own).
+        """
+        fps = phase.get("fps")
+        if fps is not None:
+            return fps
+        native = adapter.native_fps()
+        return native if native is not None else _DEFAULT_FPS
+
+    def _speed(self, adapter: EnvAdapter, fps: float, index: int, game: str) -> dict:
+        """The block's speed against the engine's own clock, said aloud when it is not 1.
+
+        :param adapter: the block's adapter (see :meth:`EnvAdapter.native_fps`).
+        :param fps: the block's steps per second.
+        :param index: the block's phase index.
+        :param game: its game id.
+        :return: manifest fields -- ``native_fps`` and ``speed`` -- or ``{}`` for
+            an engine with no clock of its own.
+        """
+        native = adapter.native_fps()
+        if native is None:
+            return {}
+        speed = fps / native
+        if abs(speed - 1) > _SAME_SPEED:
+            print(f"phase {index} ({game}): fps {fps:g} against the engine's own {native:g} -- "
+                  f"the game plays at {speed:.2f}x its real speed", file=sys.stderr)
+        return {"native_fps": native, "speed": speed}
 
     def _note_stalls(self, index: int, game: str, resets: list) -> None:
         """Warn about a block's dropped stalls now; :meth:`run` repeats it at exit.

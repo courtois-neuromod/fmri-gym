@@ -451,7 +451,11 @@ reason.
  "duration": 30.0,              // seconds (duration mode)
  "n_episodes": 1,               // episodes (episode mode)
  "max_duration": 300.0,         // hard wall-clock safety cap (episode mode)
- "fps": 30,                     // target game frames/second
+ "fps": 30,                     // optional: steps (and frames) per second. Left out, the engine's
+                                // own rate (console cores and Atari ~60, Doom 35 / frame_skip), so
+                                // the game plays at its real speed and its sound fits; 30 where the
+                                // engine has no clock of its own. Set one to play slower or faster;
+                                // the manifest logs "speed" and the console says so when it is not 1
  "turn_based": false,           // step only on a key PRESS, not per frame (grid/toy_text games)
  "seed": 1234,                  // optional base seed: episodes play with seed, seed+1, ...
                                 // Pinned, every participant and run gets the same episodes.
@@ -579,13 +583,18 @@ presses and releases are logged as they arrive (`key_time`, `key_name`,
 `key_down`), independent of the frame grid. The manifest records the display
 actually obtained (`vsync`, measured at start-up; `refresh_rate`).
 
-- Pick a game `fps` that divides the monitor's refresh rate (30 or 60 on 60 Hz).
-- Before a MEG/EEG session, check that the rig locks to the refresh:
+- A frame is shown at the next refresh after its step, so an `fps` that
+  divides the refresh rate (30 or 60 on a 60 Hz screen) shows every frame for
+  the same number of refreshes; otherwise frames alternate between one and two
+  and each onset can be up to one refresh late. `flip_time` records what
+  happened either way. The engine's own rate, which a blank `fps` takes, is
+  59.92 for some cores: close enough to 60 Hz that one frame in ~800 is shown
+  twice.
+- Check that the rig locks to the refresh before a session:
   `python -m fmri_gym.display --fullscreen` (verdict LOCKED / NOT locked; if
   not, use fullscreen and disable the desktop compositor). `--no-vsync` turns
-  the request off. On a rig with several screens, pass the session's
-  `--monitor` here and to the photodiode too: refresh, vsync and the photon
-  offset belong to the monitor.
+  the request off. Pass the session's `--monitor` here and to the photodiode:
+  refresh, vsync and the photon offset belong to the monitor.
 - Once per rig, measure the constant flip-to-photon offset with a photodiode on
   the screen, then subtract it from `flip_time` and the frame triggers:
 

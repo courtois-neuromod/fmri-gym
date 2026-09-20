@@ -33,6 +33,9 @@ An adapter is lightweight glue that takes a gym env and makes it fMRI-friendly. 
 - produce an RGB frame for the screen (`render`)
 - if the engine makes sound, hand over this step's PCM (`sound`; the contract is in
   `EnvAdapter.sound`, and `retro.py` is a two-line example)
+- if the engine has a clock of its own, say how many steps per second are real speed
+  (`native_fps`), read from the engine where it tells; the session reports the block's
+  speed against it
 - pull out the analysis-relevant variables (`capture`)
 
 If you find yourself writing game rules, drawing a board, tracking a selection cursor,
