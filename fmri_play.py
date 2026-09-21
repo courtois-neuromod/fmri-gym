@@ -54,6 +54,8 @@ def main() -> None:
                    help="ALE only: also store lossless pixels (large; warns).")
     p.add_argument("--vgdl-repo", default=os.environ.get("VGDL_REPO"),
                    help="path to the language_and_experience checkout (vgdl backend)")
+    p.add_argument("--coom-repo", default=os.environ.get("COOM_REPO"),
+                   help="path to the TTomilin/COOM checkout (coom backend)")
     args = p.parse_args()
 
     config = load_config(args.curriculum)
@@ -72,6 +74,8 @@ def main() -> None:
             phase.setdefault("save_pixels", True)
         if backend == "vgdl" and args.vgdl_repo:
             phase.setdefault("repo", args.vgdl_repo)
+        if backend == "coom" and args.coom_repo:
+            phase.setdefault("repo", args.coom_repo)
 
     # Triggers first: a bad section or an unopenable port stops the run here,
     # at the desk, before any window opens -- not mid-session with a participant.

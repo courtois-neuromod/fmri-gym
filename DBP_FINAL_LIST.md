@@ -29,8 +29,11 @@ Each was verified to render a real frame (PNG spot-checks for the SuperTuxKart
 1. **COOM → ViZDoom.** Real COOM pins `gymnasium==0.28`, which breaks
    MiniHack/NetHack/retro (need 1.2). ViZDoom is the *identical Doom engine*
    COOM is built on, works with our gymnasium, and provides the action-shooter
-   scenarios — so we use it. If COOM's specific continual-learning scenario
-   WADs are ever needed, that's a separate `gymnasium==0.28` env.
+   scenarios — so we use it for the DBP slot above. COOM's own continual-learning
+   scenarios (pitfall, chainsaw, hide_and_seek, ...) are now also reachable
+   without a separate env: the `coom` backend drives `vizdoom.DoomGame` directly
+   against COOM's `conf.cfg`/`.wad` files from a `COOM_REPO` checkout, never
+   importing the COOM package itself (see `dbp_games/coom__pitfall.json`, etc.).
 
 2. **SuperTuxKart needs a real GL display.** pystk2-gymnasium is state-only
    (no pixels), so we drive `pystk2` directly for the 3D render — but Irrlicht
