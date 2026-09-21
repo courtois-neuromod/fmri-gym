@@ -311,16 +311,30 @@ front of the same env object, and a block replays from `episode_seeds` +
 backend (pystk2) is untouched; the two coexist.
 
 ```bash
-git clone -b gym-frames https://github.com/chrplr/stk-code.git ../stk-code
-cmake -S ../stk-code -B ../stk-code/build -DCMAKE_BUILD_TYPE=Release && cmake --build ../stk-code/build -j
-uv pip install -e ../stk-code/python    # or pip install -e, in the same env
+uv pip install "fmri-gym[stk_gym]"      # or: pip install supertuxkart-gym
 uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/stk_gym__race.json
 ```
 
-The binary is found in the fork's `build/bin`, or set `STK_ENV_BIN`. It needs a
-real OpenGL display (the frame is the game's rendering). `fps` must equal the
-game's physics rate over `frame_skip` (120 / 2 = 60 in the config); the config's
-`_note`s list the keys, the phase fields and the logged columns, and the fork's
+No checkout and no build: the wheel is pure Python and fetches the game with a
+trimmed asset pack (254 MiB, five tracks) from its GitHub release the first time
+an env is made, into `~/.cache/supertuxkart-gym`. It says so while it downloads,
+and never does it twice. Linux x86_64 only for now; on anything else it says
+which platform it has no pack for.
+
+To work on the engine itself, build the fork and install its client instead --
+a checkout is preferred over the downloaded pack, so nothing else changes:
+
+```bash
+git clone https://github.com/chrplr/stk-code.git ../stk-code
+cmake -S ../stk-code -B ../stk-code/build -DCMAKE_BUILD_TYPE=Release && cmake --build ../stk-code/build -j
+uv pip install -e ../stk-code/python    # or pip install -e, in the same env
+```
+
+Either way the binary can be overridden with `STK_ENV_BIN`, and
+`STK_ENV_OFFLINE=1` forbids the download outright. It needs a real OpenGL
+display (the frame is the game's rendering). `fps` must equal the game's physics
+rate over `frame_skip` (120 / 2 = 60 in the config); the config's `_note`s list
+the keys, the phase fields and the logged columns, and the fork's
 `python/README.md` ("Frames", "Reproducibility") the details and measured cost.
 
 ## Design: the experiment loop never knows the engine
