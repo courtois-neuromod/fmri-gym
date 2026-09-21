@@ -18,6 +18,7 @@ through small pluggable **adapters**:
 | `nethack`     | NetHack (`NetHack*-v0`; TTY rendered to pixels) | nle |
 | `aigamestore` | AI GameStore p5.js/browser games (`game1`…`game10`) | p5.js via headless browser |
 | `vizdoom`     | Doom action-shooter scenarios (COOM's engine) | ViZDoom |
+| `coom`        | COOM's own continual-RL scenarios (`pitfall`, `chainsaw`, …), read as ViZDoom scenario assets from a `COOM_REPO` checkout (COOM package itself not installed -- conflicting `gymnasium` pin) | ViZDoom |
 | `overcooked`  | Overcooked co-op cooking (social) | overcooked_ai |
 | `baba`        | Baba Is You (rule-manipulation puzzle) | baba-is-ai |
 | `rushhour`    | Rush Hour sliding-block puzzle | `rushhour-gym` (PyPI; fetches its Go engine) |
@@ -134,6 +135,7 @@ the right per-game keymap/settings baked in. Coverage by class:
 | `crafter__` | 1 | crafter |
 | `craftium__` | 1 | choptree (Luanti voxel; other ids: Room/Speleo/OpenWorld/…) |
 | `vizdoom__` | 1 | defend_center (Doom; COOM's engine; other Vizdoom*-v1 scenarios) |
+| `coom__` | 9 | pitfall, chainsaw, hide_and_seek, health_gathering, arms_dealer, parkour, raise_the_roof, run_and_gun, floor_is_lava (needs the COOM repo checkout) |
 | `overcooked__` | 1 | cramped_room (co-op cooking; other layouts) |
 | `baba__` | 1 | make_win (rule-manipulation puzzle; other ids) |
 | `rushhour__` | 1 | easy (sliding-block puzzle). `rushhour__complete.json` is the full self-paced session of Rush-Hour's own program, then the rest of the library: all 49 puzzles, the first 12 easiest-first and the other 37 in a fixed shuffled order, one game phase each, with ready screens and solved feedback as message phases |
@@ -150,8 +152,8 @@ playwright, box2d-py, MuJoCo GL, ROM import).
 > with a `_status`/`_note` explaining why: games with no real-time pixel
 > interface — `2048` (upstream reset bug), `pathery`/`wordle` (text/placement),
 > `tile-match-gym` (display-only, `Discrete(84)` swaps → no keyboard play),
-> `mastermind` (needs Python ≥3.13), and heavy engines
-> `coom` (ViZDoom) / `craftium` (Luanti) that need a dedicated adapter.
+> `mastermind` (needs Python ≥3.13), and `craftium` (needs the Luanti engine
+> built).
 
 Runtime flow: experimenter screen (**SPACE**) → "Waiting for scanner..." →
 scanner **trigger `=`** (anchors the session clock) → curriculum phases → done.
@@ -231,6 +233,49 @@ same `fmri-gym` env works.
 VGDL blocks log a symbolic per-cell object grid (`symbolic_state`) and collision
 `events` as analysis variables, plus a per-frame exact savestate (get/set_state)
 for determinism-free reconstruction.
+
+## Running COOM games
+
+The `coom` backend plays [TTomilin/COOM](https://github.com/TTomilin/COOM)'s
+own continual-RL Doom scenarios (`pitfall`, `chainsaw`, `hide_and_seek`,
+`health_gathering`, `arms_dealer`, `parkour`, `raise_the_roof`, `run_and_gun`,
+`floor_is_lava`) -- distinct from the stock ViZDoom scenarios the `vizdoom`
+backend already covers (DeadlyCorridor, DefendCenter, ...).
+
+COOM's own Python package pins `gymnasium==0.28.1`, which conflicts with
+minihack's `gymnasium==1.2` pin in this shared env, so **the COOM package is
+never installed or imported**. Instead the `coom` backend drives
+`vizdoom.DoomGame` (the `vizdoom` extra) directly against COOM's own scenario
+config/WAD files, read straight off disk from a checkout:
+
+1. Clone COOM as an adjacent repo:
+
+   ```bash
+   git clone https://github.com/TTomilin/COOM.git ../COOM
+   ```
+
+2. Point the framework at the checkout (no install, no `PYTHONPATH` needed --
+   only the scenario asset files under `COOM/env/scenarios/` are read) and run
+   a COOM curriculum:
+
+   ```bash
+   COOM_REPO=../COOM \
+     uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__pitfall.json
+   ```
+
+   `COOM_REPO` locates `<repo>/COOM/env/scenarios/<scenario>/conf.cfg` and
+   `<task>.wad` (`env_kwargs.task`, default `"default"`; some scenarios like
+   `run_and_gun` ship extra task variants -- `blue`, `red`, `hard`, ...); a
+   phase can also override it per block with a `"repo"` field.
+
+Every scenario always exposes exactly 4 buttons (`TURN_LEFT`, `TURN_RIGHT`,
+`MOVE_FORWARD`, plus one of `JUMP`/`ATTACK`/`SPEED`/`USE`), so the backend
+derives a sensible default keymap automatically (arrows to turn/move, that
+4th button on SPACE/LSHIFT/E) -- no curriculum `keys` override needed unless
+you want to remap it. COOM blocks log the raw ViZDoom `game_variables`
+(health, ammo, position, ...) as an analysis variable; there's no in-memory
+savestate, so reconstruction is via seed + action replay like most backends.
+No native audio yet, unlike the `vizdoom` backend's `sound()`.
 
 ## Running AI GameStore games
 
