@@ -64,11 +64,13 @@ RUN virtualenv /venv \
     && pip uninstall -y pygame \
     && pip install --no-cache-dir --force pygame-ce
 
-
 FROM runtime-base AS runtime
 
 COPY --from=builder /venv /venv
 COPY --from=builder /src /src
+
+# predownload binaries
+RUN python -c 'import stk_gym; stk_gym.StkEnv()'
 
 ENV PATH=/venv/bin/:$PATH
 
