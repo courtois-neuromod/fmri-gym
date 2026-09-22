@@ -1,4 +1,4 @@
-"""The ``--gui`` window (PySide6). What it edits and why is in :mod:`fmri_gym.gui`.
+"""The ``fmri-edit`` window (PySide6). What it edits and why is in :mod:`fmri_gym.gui`.
 
 This module is the only one that imports Qt, and it does so at the top because
 its classes subclass Qt widgets; :func:`fmri_gym.gui.edit_config` imports it
@@ -68,7 +68,7 @@ QPushButton#run:pressed { background: #2459b8; }
 
 
 def run_editor(config: dict, path: str | None, launch: dict,
-               session: str | None = None) -> tuple[dict, str, dict, list[str] | None] | None:
+               session: str | None = None) -> list[str] | None:
     """Show the editor and block until it closes; see :func:`fmri_gym.gui.edit_config`.
 
     :raises KeyboardInterrupt: on Ctrl+C in the terminal, once the window is closed.
@@ -83,7 +83,7 @@ def run_editor(config: dict, path: str | None, launch: dict,
     if interrupted:
         editor.hide()
         raise KeyboardInterrupt
-    return editor.result
+    return editor.to_run
 
 
 @contextlib.contextmanager
@@ -308,12 +308,13 @@ class _KeyCapture(QtWidgets.QDialog):
 
 
 class _Editor(QtWidgets.QMainWindow):
-    """The window: menu, tabs, bottom bar. ``result`` is set by Run."""
+    """The window: menu, tabs, bottom bar. ``to_run`` is what Play left to run."""
 
     def __init__(self, config: dict, path: str | None, launch: dict,
                  session: str | None = None) -> None:
         super().__init__()
-        self.result: tuple[dict, str, dict, list[str] | None] | None = None
+        #: What Play left for fmri-edit to become (gui.edit_config); None: closed instead.
+        self.to_run: list[str] | None = None
         self.session_path: str | None = None
         self.steps: list[dict] = []     # {"config": path} | {"command": text}, each + "skip"
         self.step_index = 0
@@ -1690,18 +1691,22 @@ class _Editor(QtWidgets.QMainWindow):
             return None
 
     def _run(self) -> None:
-        """A lone config is handed back to ``fmri_play``; a session is saved and handed over to."""
+        """Play: save, then leave the command that plays what is shown (see ``to_run``).
+
+        Both kinds play files on disk -- a session its script, a lone run its
+        config -- so what was edited here is saved first, a new config being
+        asked for a name. ``fmri-edit`` then becomes that command.
+        """
         launch = self._checked_launch()
         if launch is None:
             return
-        script = None
+        if not self._save():
+            return
         if self._is_session():
-            if not self._save():
-                return
-            script = ["sh", self.session_path]
-        step = self.steps[self.step_index]
-        path = step.get("config", "")  # a session's process becomes its script: unused then
-        self.result = (self.configs[path] if path else {}, path, launch, script)
+            self.to_run = ["sh", self.session_path]
+        else:
+            ses = None if launch["ses"] is None else f"{launch['ses']:03d}"
+            self.to_run = gui.play_command(self.steps[self.step_index]["config"], launch, ses)
         self.close()
 
     def _error(self, text: str) -> None:

@@ -91,16 +91,19 @@ uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games
 ```
 
 A run is a JSON file and a session is a `.sh` script (below). Write them by
-hand, or design them in the editor -- either way `fmri-play` reads the same
-files, and refuses one it cannot play. `--gui` opens the editor on a run, a
-session, or a new run; **Play** starts what it shows. Its Launch tab holds
-this launch's flags (subject, session, monitor, window, the test switches),
+hand, or design them in `fmri-edit` -- either way `fmri-play` reads the same
+files, and refuses one it cannot play. `fmri-play` plays one run and nothing
+else; the editor is a command of its own, which opens on a run, a session, or
+a new run. **Play** there saves what it shows and starts it: an `fmri-play`
+command for a run, the script itself for a session. Its Launch tab holds the
+flags of that launch (subject, session, monitor, window, the test switches),
 which belong to the launch, not to the files. The editor is the `gui` extra:
 
 ```bash
 uv sync --extra dbp --extra gui
-uv run fmri-play --gui --curriculum configs/demo_meg.json
-uv run fmri-play --gui --session configs/ses1.sh
+uv run fmri-edit --curriculum configs/demo_meg.json
+uv run fmri-edit --session configs/ses1.sh
+uv run fmri-edit                                    # start from a new run
 ```
 
 Drop `--dummy-trigger` for a real session (then press SPACE, then wait for the
@@ -473,7 +476,7 @@ number there (`SES=002`) to resume a stopped session in its own session.
 `set -e` stops it at the first run that fails or is quit with ESC (`fmri-play`
 then exits with status 3). A line that is not an `fmri-play` run is any command
 of yours, as typed; a commented line is a skipped run, which is how a stopped
-session is resumed. Write it by hand, or in `--gui`, whose Session manager tab
+session is resumed. Write it by hand, or in `fmri-edit`, whose Session manager tab
 has two panels, each a form and the text it stands for: Session design (the
 list of lines -- add an existing or a new config, an external script; repeat,
 reorder, skip, "Start here" -- or the script itself) and Run design (the
@@ -494,7 +497,7 @@ sh configs/ses_dbp_puzzle.sh   # nine AI GameStore puzzles, Rush Hour, Baba Is Y
 ```
 
 They assume `sub-01`, a 1024x768 window and the next free session: open one
-in `--gui --session configs/ses_dbp_mix.sh` to change any of that, or
+in `fmri-edit --session configs/ses_dbp_mix.sh` to change any of that, or
 `--dummy-trigger` a run of it at the desk.
 
 ```jsonc

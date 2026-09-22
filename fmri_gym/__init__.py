@@ -6,6 +6,14 @@ that wraps the underlying environment for one game block.
 
 from __future__ import annotations
 
+import os
+
+# pygame prints a banner on import, to stdout -- where fmri-play's --next-ses
+# answers a session script's SES=$(...). Set here, before anything imports
+# pygame, so it holds for every entry point. The versions it shows go in the
+# manifest instead.
+os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+
 from .adapters import get_adapter
 from .session import Session, Clock
 from .display import Display

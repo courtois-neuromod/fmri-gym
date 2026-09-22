@@ -1,4 +1,4 @@
-"""``fmri_play.py --gui``: a config editor so a rig can be set up without JSON.
+"""``fmri-edit``: a config editor so a rig can be set up without JSON.
 
 Session manager has two panels. Session design is the session's lines
 (:func:`write_session`) -- each a run, a config file, or an external
@@ -10,21 +10,22 @@ with the backend's defaults on request), Triggers (the start sync, the
 backend and the codes, with fMRI/MEG/EEG presets, a check and a live test). The
 last tab, Launch, holds the command-line flags
 of this one launch (subject, window, test switches): they are never saved to
-the file. File > New / Open / Save / Save As, and Run hands the config and the
-launch flags back to ``fmri_play``.
+the file. File > New / Open / Save / Save As.
 
-A lone config is a session of one run with no script, and Run hands it back
-to ``fmri_play``. With several lines, Save writes the configs shown here and
-the session script, and Run hands the process over to that script: one process
-per run, nothing in Python loops over runs. File > Open takes either kind of
-file, a config (``.json``) or a session (``.sh``).
+A lone config is a session of one run with no script. Save writes the configs
+shown here and, for several lines, the session script; Play saves and then
+hands this process over to what plays what it showed -- one ``fmri-play`` for
+a run, the script itself for a session -- so there is one process per run and
+nothing in Python loops over runs. File > Open takes either kind of file, a
+config (``.json``) or a session (``.sh``).
 
 The triggers section is always written in full. A file that leaves
 ``sync.mode`` or ``backend`` out runs, but is reported as NOT SET on the
 experimenter screen; the forms show a value for both, so Save states them.
 
-The field tables, the parsers and the session scripts live here; the window
-itself is :mod:`fmri_gym.gui_qt`, imported by :func:`edit_config`. Field
+The field tables, the parsers, the session scripts and the ``fmri-edit``
+command line live here; the window itself is :mod:`fmri_gym.gui_qt`, imported
+by :func:`edit_config` so that the rest is readable without PySide6. Field
 labels are the config keys and each field's tip says what it does, so the
 dialog and the file read alike.
 """
@@ -37,6 +38,7 @@ import json
 import os
 import re
 import shlex
+import sys
 from dataclasses import dataclass
 from typing import Any, Sequence
 
@@ -72,6 +74,15 @@ class Field:
     tip: str = ""
     default: Any = None
 
+
+#: What the Launch tab starts at, and so what a run's command carries unless the
+#: tab (or an opened session script) says otherwise. Fullscreen, as a session in
+#: the scanner needs; untick it to pilot at the desk.
+DEFAULT_LAUNCH: dict[str, Any] = {
+    "subject": "sub-test", "ses": None, "data_root": "data", "size": "1024x768",
+    "monitor": 0, "fullscreen": True, "no_vsync": False, "no_audio": False,
+    "dummy_trigger": False,
+}
 
 #: Keys are the argparse names of ``fmri_play.py``'s flags; labels are the flags.
 LAUNCH_FIELDS = [
@@ -480,6 +491,9 @@ PLAY = "uv run fmri-play"
 DATA_ROOT = "data"
 #: The launch flags a session carries on every run's line (argparse names of ``fmri_play``).
 SWITCHES = ("fullscreen", "no_vsync", "no_audio", "dummy_trigger")
+#: Where a run's line takes its ``--ses``: the session the script picked once, in
+#: its first line. Written as typed, not quoted -- the shell has to expand it.
+SES_VAR = '"$SES"'
 _PINNED = re.compile(r"SES=(\d+)")
 
 
@@ -546,24 +560,39 @@ def read_session(text: str) -> tuple[list[dict], dict | None]:
     return steps, launch
 
 
+def play_command(config_path: str, launch: dict, ses: str | None) -> list[str]:
+    """The command that plays one run: ``fmri-play``, its config and the launch flags.
+
+    The editor's Play runs this; a session script holds one per line.
+
+    :param config_path: the run's config file.
+    :param launch: the launch flags (see :data:`DEFAULT_LAUNCH`).
+    :param ses: the ``--ses`` value -- a number, or :data:`SES_VAR` in a script.
+        ``None`` leaves the flag out, so the run takes the next free session.
+    :return: the command, word by word.
+    """
+    root = [] if launch["data_root"] == DATA_ROOT else ["--data-root", launch["data_root"]]
+    monitor = ["--monitor", str(launch["monitor"])] if launch["monitor"] else []
+    switches = [f"--{key.replace('_', '-')}" for key in SWITCHES if launch[key]]
+    return [*PLAY.split(), "--curriculum", config_path, "--subject", launch["subject"], *root,
+            *(["--ses", ses] if ses is not None else []),
+            "--size", launch["size"], *monitor, *switches]
+
+
 def _ses_line(launch: dict) -> str:
     if launch["ses"] is not None:
         return f"SES={launch['ses']:03d}"
-    return f"SES=$({' '.join([PLAY, *_who(launch), '--next-ses'])})"
-
-
-def _who(launch: dict) -> list[str]:
-    """``--subject``, and ``--data-root`` when not the default: whose numbers these are."""
-    root = [] if launch["data_root"] == DATA_ROOT else ["--data-root",
-                                                        shlex.quote(launch["data_root"])]
-    return ["--subject", shlex.quote(launch["subject"]), *root]
+    root = [] if launch["data_root"] == DATA_ROOT else ["--data-root", launch["data_root"]]
+    return f"SES=$({_shell([*PLAY.split(), '--subject', launch['subject'], *root, '--next-ses'])})"
 
 
 def _play_line(config_path: str, launch: dict) -> str:
-    flags = [f"--{key.replace('_', '-')}" for key in SWITCHES if launch[key]]
-    monitor = ["--monitor", str(launch["monitor"])] if launch["monitor"] else []
-    return " ".join([PLAY, "--curriculum", shlex.quote(config_path), *_who(launch),
-                     '--ses "$SES"', "--size", shlex.quote(launch["size"]), *monitor, *flags])
+    return _shell(play_command(config_path, launch, SES_VAR))
+
+
+def _shell(command: list[str]) -> str:
+    """A command as a script line: each word quoted, but ``$SES`` left for the shell."""
+    return " ".join(word if word == SES_VAR else shlex.quote(word) for word in command)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -591,18 +620,17 @@ def _parse_play_line(line: str) -> tuple[str, dict] | None:
     return args.pop("curriculum"), args
 
 
-def edit_config(config: dict, path: str | None, launch: dict,
-                session: str | None = None) -> tuple[dict, str, dict, list[str] | None] | None:
-    """Open the editor; return what to run, or ``None``.
+def edit_config(config: dict, path: str | None,
+                session: str | None = None) -> list[str] | None:
+    """Open the editor; return the command that plays what it showed, or ``None``.
 
     :param config: config dict (see :func:`fmri_gym.config.check_shape`).
     :param path: file it came from, for Save; ``None`` if new.
-    :param launch: the launch flags to pre-fill (keys of :data:`LAUNCH_FIELDS`).
     :param session: a session script to open instead of ``config``.
-    :return: ``(config, path, launch, script)`` as edited when Run is pressed:
-        ``path`` is the config's file (for a new one, the name it would get),
-        ``script`` is ``None`` for a lone config, else the command that plays
-        the session (its saved script). ``None`` when the window is closed.
+    :return: what Play starts, word by word -- one ``fmri-play`` for a run
+        (:func:`play_command`), ``sh <script>`` for a session of several. Both
+        play files on disk: Play saves before it returns. ``None`` when the
+        window was closed instead.
     :raises ImportError: if PySide6 is not installed, with the install line.
     """
     try:
@@ -610,7 +638,34 @@ def edit_config(config: dict, path: str | None, launch: dict,
     except ImportError as exc:
         if not (exc.name or "").startswith("PySide6"):
             raise
-        raise ImportError("--gui needs PySide6: `uv sync --extra gui` (name the other extras "
-                          "you use too, or uv removes them), or `pip install "
+        raise ImportError("fmri-edit needs PySide6: `uv sync --extra gui` (name the other "
+                          "extras you use too, or uv removes them), or `pip install "
                           "PySide6-Essentials`") from exc
-    return run_editor(config, path, launch, session)
+    return run_editor(config, path, dict(DEFAULT_LAUNCH), session)
+
+
+def main() -> None:
+    """``fmri-edit``: design a run or a session, then become what plays it.
+
+    The editor opens on a run config, a session script, or a new run. Play
+    saves what is shown and this process turns into the command that plays it:
+    one ``fmri-play`` for a run, the script itself for a session of several.
+    Nothing about a launch is a flag here -- subject, window, the test switches
+    are the Launch tab's, and a session writes them on every line of its script.
+    """
+    p = argparse.ArgumentParser(description="Design fmri-gym runs and sessions, then play one.")
+    p.add_argument("--curriculum", help="run config (.json) to open; default: a new run")
+    p.add_argument("--session", help="session script (.sh, one line per run) to open. To play "
+                                     "one without the editor, run it: sh <session>.sh")
+    args = p.parse_args()
+    if args.session and args.curriculum:
+        p.error("--session and --curriculum: the session already names its configs")
+    config = cfg.load_config(args.curriculum) if args.curriculum else cfg.new_config()
+    try:
+        command = edit_config(config, args.curriculum, session=args.session)
+    except KeyboardInterrupt:
+        print("interrupted: the editor is closed and nothing was run; edits since the last "
+              "Save are not written", file=sys.stderr)
+        sys.exit(130)  # the shell's status for a Ctrl+C
+    if command is not None:
+        os.execvp(command[0], command)
