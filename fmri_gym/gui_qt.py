@@ -432,6 +432,9 @@ class _Editor(QtWidgets.QMainWindow):
         """The session's lines, as a list or as the script itself."""
         listing = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(listing)
+        self.session_pick = self._file_pick("sh", "the session scripts in configs/ (File > Open "
+                                                  "for one elsewhere)", self._pick_session)
+        layout.addLayout(_row(QtWidgets.QLabel("Session"), self.session_pick, stretch=False))
         self.run_list = QtWidgets.QListWidget()
         self.run_list.setFont(_mono())
         self.run_list.currentRowChanged.connect(self._select_step)
@@ -469,10 +472,14 @@ class _Editor(QtWidgets.QMainWindow):
         self.run_views.currentChanged.connect(self._on_run_view)
         self.run_title = QtWidgets.QLabel()
         self.run_title.setObjectName("hint")
+        self.run_pick = self._file_pick("json", "the run configs in configs/: open one, or in a "
+                                                "session add it after the selected line",
+                                        self._pick_run)
         design = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(design)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.run_title)
+        layout.addLayout(_row(self.run_title, QtWidgets.QLabel("Run"), self.run_pick,
+                              stretch=False))
         layout.addWidget(self.run_views, 1)
         return design
 
@@ -533,6 +540,46 @@ class _Editor(QtWidgets.QMainWindow):
         layout.addWidget(hint)
         layout.addStretch(1)
         return page
+
+    @staticmethod
+    def _file_pick(ext: str, tip: str, slot: Callable[[str], Any]) -> QtWidgets.QComboBox:
+        """A drop-down of the ``configs/`` files of one kind; choosing one calls ``slot``."""
+        pick = QtWidgets.QComboBox()
+        pick.setFont(_mono())
+        pick.setSizeAdjustPolicy(QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToContents)
+        pick.setToolTip(tip)
+        pick.addItem("pick from configs/...", None)
+        for path in gui.listed_files(ext):
+            pick.addItem(path, path)
+        pick.activated.connect(lambda index: slot(pick.itemData(index)))
+        return pick
+
+    def _pick_session(self, path: str | None) -> None:
+        if path is None:
+            return
+        try:
+            self.open_session(path)
+        except (OSError, ValueError) as exc:
+            self._error(f"cannot open {path}: {exc}")
+
+    def _pick_run(self, path: str | None) -> None:
+        """A lone config is replaced, as by File > Open; a session gets the run as a line."""
+        self.run_pick.setCurrentIndex(0)  # an action, not a state: the title says what is shown
+        if path is None:
+            return
+        if self._is_session():
+            self._add_config(path)
+            return
+        try:
+            self.open_config(cfg.load_config(path), path)
+        except (OSError, ValueError) as exc:
+            self._error(f"cannot open {path}: {exc}")
+
+    def _sync_session_pick(self) -> None:
+        """The session drop-down shows the open script, or the prompt for a lone config."""
+        self.session_pick.blockSignals(True)  # ours, not a click
+        self.session_pick.setCurrentIndex(max(0, self.session_pick.findData(self.session_path)))
+        self.session_pick.blockSignals(False)
 
     def _tab_controls(self) -> QtWidgets.QWidget:
         page = QtWidgets.QWidget()
@@ -958,6 +1005,7 @@ class _Editor(QtWidgets.QMainWindow):
             self._set_view(self.run_views, _PHASES)
             self._run_view = _PHASES
         self.run_title.setText(f"line {index + 1} of the session: {self._where(step)}")
+        self._sync_session_pick()
         self.command.setText(step.get("command", ""))
         self.skip_box.blockSignals(True)  # ours, not a click
         self.skip_box.setChecked(step["skip"])

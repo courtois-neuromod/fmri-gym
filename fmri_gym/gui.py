@@ -275,6 +275,22 @@ def curated_games(root: str = CONFIGS_DIR) -> tuple[dict[str, dict[str, tuple[st
     return games, unreadable
 
 
+def listed_files(ext: str, root: str = CONFIGS_DIR) -> list[str]:
+    """The ``*.<ext>`` files under ``root``, as the editor's drop-downs list them.
+
+    Sessions (``sh``) and runs (``json``) are picked from here rather than found
+    through a file dialog, so the repo's examples are one click away. A folder
+    named ``unsupported`` holds configs that do not play; it is left out.
+
+    :param ext: ``"sh"`` for session scripts, ``"json"`` for run configs.
+    :param root: folder searched recursively.
+    :return: paths relative to the working directory, in path order.
+    """
+    paths = sorted(glob.glob(os.path.join(root, "**", f"*.{ext}"), recursive=True))
+    return [os.path.relpath(p) for p in paths
+            if "unsupported" not in os.path.relpath(p, root).split(os.sep)[:-1]]
+
+
 def suggest_name(stem: str, taken: set[str]) -> str:
     """A free name counting up from ``stem``: ``ale``, ``ale_2``, ``ale_3`` -- never ``ale_2_2``.
 

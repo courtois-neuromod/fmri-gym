@@ -477,9 +477,25 @@ session is resumed. Write it by hand, or in `--gui`, whose Session manager tab
 has two panels, each a form and the text it stands for: Session design (the
 list of lines -- add an existing or a new config, an external script; repeat,
 reorder, skip, "Start here" -- or the script itself) and Run design (the
-selected run's phases, or its JSON). File > Open takes a `.sh` like a `.json`,
-and Save writes the script and the configs you edited. Run it from the repo root:
-`sh configs/ses1.sh`.
+selected run's phases, or its JSON). Each panel starts with a drop-down of what
+`configs/` holds: the Session one opens a script, the Run one opens a config
+(or, in a session, adds it after the selected line); File > Open takes a `.sh`
+like a `.json` from anywhere. Save writes the script and the configs you
+edited. Run it from the repo root: `sh configs/ses1.sh`.
+
+Three example sessions of about an hour each ship in `configs/` -- eleven
+runs of one DBP game apiece (5 min of play, plus the instructions screen and
+the start-up between runs):
+
+```bash
+sh configs/ses_dbp_mix.sh      # one run per genre: Crafter, COOM, MiniHack, Rush Hour, Baba, ViZDoom, AI GameStore...
+sh configs/ses_dbp_doom.sh     # the nine COOM scenarios, then two ViZDoom ones
+sh configs/ses_dbp_puzzle.sh   # nine AI GameStore puzzles, Rush Hour, Baba Is You
+```
+
+They assume `sub-01`, a 1024x768 window and the next free session: open one
+in `--gui --session configs/ses_dbp_mix.sh` to change any of that, or
+`--dummy-trigger` a run of it at the desk.
 
 ```jsonc
 {"type": "fixation", "duration": 2.0}                 // "+" for N seconds
