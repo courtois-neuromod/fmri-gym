@@ -51,7 +51,7 @@ class EnvAdapter:
     An EnvAdapter WRAPS one game environment for one game block: it builds the
     underlying engine env in ``__init__`` and keeps it (and any per-block state)
     private, exposing only the small interface the experiment loop needs. The
-    loop (session.py) never sees the raw env, ``env.unwrapped``, or any
+    loop (run.py) never sees the raw env, ``env.unwrapped``, or any
     engine-specific API -- it just calls the methods below on the wrapper.
 
     A fresh EnvAdapter is constructed per game block (see

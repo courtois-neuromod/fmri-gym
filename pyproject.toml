@@ -71,6 +71,9 @@ fmri-play = "fmri_play:main"
 # The config editor (the `gui` extra). Separate from fmri-play, which only ever
 # plays one run: what Play starts there is an fmri-play command like any other.
 fmri-edit = "fmri_gym.gui:main"
+# The next free session number for a subject: a session script's first line, so
+# all of its runs land in one session. Nothing else reads the disk for a number.
+fmri-ses = "fmri_gym.bids:main"
 
 [tool.setuptools]
 packages = ["fmri_gym", "fmri_gym.adapters"]

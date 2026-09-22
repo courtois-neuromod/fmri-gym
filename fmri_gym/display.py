@@ -340,6 +340,27 @@ def list_monitors() -> list[tuple[int, int, int]]:
             pygame.display.quit()
 
 
+def check_monitor(monitor: int) -> None:
+    """:raises ValueError: if this machine has no such monitor; the message lists them."""
+    monitors = list_monitors()
+    if not 0 <= monitor < len(monitors):
+        labels = "; ".join(monitor_label(i, m) for i, m in enumerate(monitors))
+        raise ValueError(f"--monitor {monitor}: this machine has {len(monitors)}: {labels}")
+
+
+def quit_like_esc(_signum: int, _frame: object) -> None:
+    """A SIGINT handler: Ctrl+C becomes the window's quit event, handled where ESC is.
+
+    Python's own KeyboardInterrupt lands anywhere: between two fields of a
+    frame, before a game block is saved. The quit event is read between frames.
+    """
+    if pygame.display.get_init():
+        pygame.event.post(pygame.event.Event(pygame.QUIT))
+        return
+    print("Ctrl+C: no window to quit right now; press it again if the run goes on",
+          file=sys.stderr)
+
+
 def _selftest() -> None:
     """``python -m fmri_gym.display``: report whether flips lock to the refresh."""
     import argparse

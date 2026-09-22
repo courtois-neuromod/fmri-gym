@@ -400,8 +400,9 @@ class _Editor(QtWidgets.QMainWindow):
         self.skip_box.toggled.connect(self._toggle_skip)
         start = _button("Start here", self._start_here)
         start.setToolTip("Skip every run before this one and none after: how a stopped "
-                         "session is resumed. To resume it in its own session, also write its "
-                         "number in --ses on the Launch tab (blank starts a new one).")
+                         "session is resumed. The runs after it keep the numbers they have "
+                         "here. To resume into the session that stopped, give its number to "
+                         "the script (sh ses1.sh 003) or write it in --ses on the Launch tab.")
         rows = QtWidgets.QVBoxLayout()
         repeat = _button("Repeat", self._duplicate_step)
         repeat.setToolTip("The same line again. A config played twice is two runs of its task "
@@ -1279,23 +1280,21 @@ class _Editor(QtWidgets.QMainWindow):
                                 "(another participant, session or run gets another one).")
 
     def _seed_preview(self) -> tuple[int, str]:
-        """The base seed this game phase would get if launched now, and the run it is for.
+        """The base seed this game phase will get, and the run it is for.
 
-        The run is the one ``fmri_play`` would pick: the ``--ses`` given or the next free
-        session, then the next free run of the task, counting the earlier lines of this
-        session that play it too.
+        The design says the run: which line of the session plays this task
+        (:func:`fmri_gym.gui.run_number`), in the ``--ses`` given or, blank,
+        the subject's next free session. A re-acquisition of a run replays
+        these same episodes -- the attempt is no part of the label.
 
         :raises ValueError: if the Launch flags or the config's name give no run label.
         """
         step = self.steps[self.step_index]
         launch = self._launch_values()
         subject, root = bids.subject_label(launch["subject"]), launch["data_root"]
-        task = bids.task_label(step["config"])
         ses = launch["ses"] or bids.next_session(root, subject)
-        earlier = sum(1 for s in self.steps[:self.step_index] if not s["skip"] and "config" in s
-                      and bids.task_label(s["config"]) == task)
-        run = bids.next_run(root, subject, ses, task) + earlier
-        label = bids.run_label(subject, ses, task, run)
+        label = bids.run_label(subject, ses, bids.task_label(step["config"]),
+                               gui.run_number(self.steps, self.step_index))
         return bids.phase_seed(label, self.edit_index), label
 
     def _pin_seed(self) -> None:
@@ -1705,8 +1704,12 @@ class _Editor(QtWidgets.QMainWindow):
         if self._is_session():
             self.to_run = ["sh", self.session_path]
         else:
-            ses = None if launch["ses"] is None else f"{launch['ses']:03d}"
-            self.to_run = gui.play_command(self.steps[self.step_index]["config"], launch, ses)
+            # fmri-play states its numbers; a blank --ses is the next free one,
+            # resolved here, as the script's SES= line resolves it for a session.
+            ses = launch["ses"] or bids.next_session(launch["data_root"],
+                                                     bids.subject_label(launch["subject"]))
+            self.to_run = gui.play_command(self.steps[self.step_index]["config"], launch,
+                                           f"{ses:03d}", gui.run_number(self.steps, 0))
         self.close()
 
     def _error(self, text: str) -> None:

@@ -52,7 +52,7 @@ from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from .session import Clock
+    from .run import Clock
 
 log = logging.getLogger(__name__)
 
@@ -325,7 +325,7 @@ class Triggers:
 
     Built once per run, next to the :class:`~fmri_gym.display.Display` and
     the :class:`~fmri_gym.audio.Audio`, and passed to the
-    :class:`~fmri_gym.session.Session`; :meth:`from_config` on ``None`` gives
+    :class:`~fmri_gym.run.Run`; :meth:`from_config` on ``None`` gives
     the ``null`` no-op, so the session loop calls these methods
     unconditionally. Events are stamped with ``perf_counter``;
     :meth:`describe` converts them to session time once given the clock.
@@ -444,14 +444,14 @@ class Triggers:
         """Settings, the open transport, and the lifecycle events sent.
 
         :param clock: a triggered session clock; each event then also gets a
-            ``session_time`` (negative for ``scanner_start``, which precedes
+            ``run_time`` (negative for ``scanner_start``, which precedes
             the anchor).
         :return: a JSON-serializable dict for the manifest.
         """
         events = [dict(e) for e in self.events]
         if clock is not None and clock.t0_perf is not None:
             for e in events:
-                e["session_time"] = clock.from_perf(e["perf_time"])
+                e["run_time"] = clock.from_perf(e["perf_time"])
         settings = asdict(self.settings)
         defaulted = settings.pop("defaulted")
         return {"settings": settings, "defaulted": defaulted, "active": self.active,

@@ -1,4 +1,4 @@
-"""Session logging: a manifest.json + one compressed .npz per game block.
+"""One run's logging: a manifest.json + one compressed .npz per game block.
 
 The logger is engine-agnostic: it consumes the standard FrameState objects the
 adapter produces, so the on-disk schema is identical across backends. Analysis
@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from .session import Clock
+    from .run import Clock
 
 
 class Logger:
@@ -23,12 +23,12 @@ class Logger:
     def __init__(
         self, outdir: str, subject: str, curriculum: list[dict], clock: Clock
     ) -> None:
-        """Create the output directory and an empty session manifest.
+        """Create the run's output directory and an empty manifest.
 
         :param outdir: directory for the manifest and game npz files.
         :param subject: subject identifier stored in the manifest.
         :param curriculum: full curriculum list stored in the manifest.
-        :param clock: session clock (used for trigger epoch / perf times).
+        :param clock: the run's clock (used for trigger epoch / perf times).
         """
         self.outdir = outdir
         self.clock = clock
@@ -53,7 +53,7 @@ class Logger:
         self.manifest["phases"].append(entry)
 
     def set_extra(self, key: str, value: Any) -> None:
-        """Store a session-level entry in the manifest (e.g. trigger settings).
+        """Store a run-level entry in the manifest (e.g. trigger settings).
 
         :param key: top-level manifest key.
         :param value: JSON-serializable value.
@@ -70,7 +70,7 @@ class Logger:
     ) -> str:
         """Write one game block's per-frame arrays to a compressed ``.npz``.
 
-        ``frames`` holds parallel lists collected by the session loop. Backend-
+        ``frames`` holds parallel lists collected by the run's loop. Backend-
         specific variables (ram, obs, screen_index, retro info vars, ...) are
         stacked under their own keys. ``extra`` is a dict of block-level arrays
         (e.g. an ALE palette) merged in verbatim.
@@ -78,7 +78,7 @@ class Logger:
         :param block_index: zero-based curriculum index used in the filename.
         :param backend: adapter name (e.g. ``"ale"``, ``"retro"``).
         :param game: game id / path used in the filename and stored in the npz.
-        :param frames: parallel lists of per-frame fields from the session loop.
+        :param frames: parallel lists of per-frame fields from the run's loop.
         :param extra: optional block-level arrays merged into the npz.
         :return: absolute path of the written ``.npz`` file.
         """
@@ -91,8 +91,8 @@ class Logger:
             terminated=np.asarray(frames["terminated"], dtype=bool),
             truncated=np.asarray(frames["truncated"], dtype=bool),
             episode_id=np.asarray(frames["episode_id"], dtype=np.int32),
-            session_time=np.asarray(frames["session_time"], dtype=np.float64),
-            # Session time of the flip that showed each frame (the onset).
+            run_time=np.asarray(frames["run_time"], dtype=np.float64),
+            # Run time of the flip that showed each frame (the onset).
             flip_time=np.asarray(frames["flip_time"], dtype=np.float64),
             wall_time=np.asarray(frames["wall_time"], dtype=np.float64),
             # Opaque per-frame savestate blobs (object array of bytes|None).
@@ -105,7 +105,7 @@ class Logger:
         # present only when a trigger backend is active.
         if frames["trigger"]:
             arrays["trigger"] = np.asarray(frames["trigger"], dtype=np.int16)
-        # Session time each frame's sound started at the DAC (NaN: the frame
+        # Run time each frame's sound started at the DAC (NaN: the frame
         # had none, or it never played); present only when the block had sound.
         # audio_onset - flip_time is the audio delay actually achieved.
         if len(frames["audio_onset"]):
@@ -132,7 +132,7 @@ class Logger:
         return path
 
     def save_manifest(self) -> str:
-        """Write ``manifest.json`` to the session output directory.
+        """Write ``manifest.json`` to the run's output directory.
 
         :return: absolute path of the written manifest file.
         """

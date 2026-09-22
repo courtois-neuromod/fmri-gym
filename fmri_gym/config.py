@@ -102,6 +102,26 @@ def new_config() -> dict:
     }
 
 
+def fold_cli_options(curriculum: list[dict], args: Any) -> None:
+    """Fold the run's CLI-global backend options into the game phases they concern.
+
+    Each per-block ``EnvAdapter`` then reads everything it needs from its own
+    spec, and the manifest's curriculum shows what was actually played.
+
+    :param curriculum: the run's phases, changed in place.
+    :param args: ``fmri_play``'s parsed flags (``no_audio``, the repo paths).
+    """
+    for phase in curriculum:
+        if phase.get("type") != "game":
+            continue
+        if args.no_audio:
+            phase["audio"] = False
+        if phase.get("backend") == "vgdl" and args.vgdl_repo:
+            phase.setdefault("repo", args.vgdl_repo)
+        if phase.get("backend") == "coom" and args.coom_repo:
+            phase.setdefault("repo", args.coom_repo)
+
+
 def validate_config(config: dict) -> list[str]:
     """Problems that would stop ``fmri_play`` before the first phase.
 

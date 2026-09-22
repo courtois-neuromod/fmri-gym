@@ -42,6 +42,7 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Sequence
 
+from . import bids
 from . import config as cfg
 from .triggers import (SYNC_MODES, TRIGGER_BACKENDS, TriggerSettings)
 
@@ -89,8 +90,11 @@ LAUNCH_FIELDS = [
     Field("subject", "--subject", tip="BIDS subject, sub-<letters/digits>: the first folder of "
                                       "the output (data/sub-01/ses-001/beh/...)."),
     Field("ses", "--ses", "int", tip="Session number. Blank = the subject's next free one, "
-                                     "counted from the folders already there (1, 2, 3...). Write "
-                                     "one to resume a stopped session in its own session."),
+                                     "counted from the folders already there (1, 2, 3...); it is "
+                                     "settled when Play starts, and a session's script asks for "
+                                     "it then too. A number here is what the script takes when "
+                                     "it is run without one -- `sh ses1.sh 003` overrides it, "
+                                     "which is how a stopped session is resumed."),
     Field("data_root", "--data-root", tip="Where the BIDS tree goes. Blank = data."),
     Field("size", "--size", "combo", (),
           tip="The window's size as <w>x<h>, when not fullscreen: common sizes that fit the "
@@ -488,13 +492,15 @@ def describe_triggers(section: dict) -> str:
 
 HEADER = ["#!/bin/sh", "# fmri-gym session: one line per run, in order.", "set -e"]
 PLAY = "uv run fmri-play"
+#: What a script's first line asks for the session number when it is given none.
+SES_TOOL = "uv run fmri-ses"
 DATA_ROOT = "data"
 #: The launch flags a session carries on every run's line (argparse names of ``fmri_play``).
 SWITCHES = ("fullscreen", "no_vsync", "no_audio", "dummy_trigger")
 #: Where a run's line takes its ``--ses``: the session the script picked once, in
 #: its first line. Written as typed, not quoted -- the shell has to expand it.
 SES_VAR = '"$SES"'
-_PINNED = re.compile(r"SES=(\d+)")
+_PINNED = re.compile(r"SES=\$\{1:-(\d+)\}$")
 
 
 def write_session(steps: list[dict], launch: dict) -> str:
@@ -505,16 +511,18 @@ def write_session(steps: list[dict], launch: dict) -> str:
         #!/bin/sh
         # fmri-gym session: one line per run, in order.
         set -e
-        SES=$(uv run fmri-play --subject sub-01 --next-ses)
-        uv run fmri-play --curriculum configs/pong.json --subject sub-01 --ses "$SES" --size ...
+        SES=${1:-$(uv run fmri-ses --subject sub-01)}
+        uv run fmri-play --curriculum configs/pong.json --subject sub-01 --ses "$SES" --run 1 ...
         ./scripts/localizer.sh "$SES"
-        # uv run fmri-play --curriculum configs/mario.json --subject sub-01 --ses "$SES" ...
+        # uv run fmri-play --curriculum configs/mario.json --subject sub-01 --ses "$SES" --run 1 ...
 
-    ``SES=`` picks the session once for all the runs (the next free one, or a
-    number: how a stopped session is resumed in its own session); each run then
-    takes its task's next free run number. A commented line is a skipped run;
-    any other line is a command of yours (it may use ``"$SES"``). ``set -e``
-    stops the session at the first line that fails or is quit.
+    ``SES=`` picks the session once for all the runs: the script's own argument
+    (``sh ses1.sh 003`` resumes that session), else the subject's next free one.
+    Each run's ``--run`` is :func:`run_number`, its place among the lines that
+    play its task -- fixed by the design, so skipping a line renumbers nothing.
+    A commented line is a skipped run; any other line is a command of yours (it
+    may use ``"$SES"``). ``set -e`` stops the session at the first line that
+    fails or is quit.
 
     :param steps: ``{"config" | "command", "skip"}`` dicts, in order.
     :param launch: subject, ses (``None``: the next free one), data_root, size,
@@ -523,17 +531,35 @@ def write_session(steps: list[dict], launch: dict) -> str:
     :return: the script.
     """
     lines = [*HEADER, _ses_line(launch)]
-    for step in steps:
-        line = step["command"] if "command" in step else _play_line(step["config"], launch)
+    for i, step in enumerate(steps):
+        line = (step["command"] if "command" in step
+                else _play_line(step["config"], launch, run_number(steps, i)))
         lines.append(f"# {line}" if step["skip"] else line)
     return "\n".join(lines) + "\n"
+
+
+def run_number(steps: list[dict], index: int) -> int:
+    """Which run of its task the line at ``index`` is: 1, 2, 3...
+
+    Counted over the lines before it that play the same task, skipped ones
+    included: a run's number belongs to the session's design, so resuming a
+    session with some lines skipped leaves every other number where it was.
+
+    :param steps: the session's lines (see :func:`write_session`).
+    :param index: the line to number; it must be a run, not a command.
+    :return: its ``--run``.
+    """
+    task = bids.task_label(steps[index]["config"])
+    return 1 + sum(1 for step in steps[:index]
+                   if "config" in step and bids.task_label(step["config"]) == task)
 
 
 def read_session(text: str) -> tuple[list[dict], dict | None]:
     """The steps and launch flags of a session script (see :func:`write_session`).
 
-    An ``fmri-play`` line the editor could not write back as it is -- other flags,
-    or flags unlike the session's -- is kept as a command, as typed.
+    An ``fmri-play`` line the editor could not write back as it is -- other
+    flags, flags unlike the session's, or a ``--run`` other than the one its
+    place gives it (:func:`run_number`) -- is kept as a command, as typed.
 
     :param text: the script.
     :return: ``(steps, launch)``; ``launch`` is ``None`` if no line is a run
@@ -541,9 +567,9 @@ def read_session(text: str) -> tuple[list[dict], dict | None]:
     """
     body = [line for line in text.splitlines() if line.strip() and line not in HEADER]
     ses_line = next((line for line in body if line.startswith("SES=")), "")
-    pinned = _PINNED.fullmatch(ses_line)
+    pinned = _PINNED.search(ses_line)
     launch: dict | None = None
-    steps = []
+    steps: list[dict] = []
     for line in body:
         if line is ses_line:
             continue
@@ -551,16 +577,18 @@ def read_session(text: str) -> tuple[list[dict], dict | None]:
         bare = line[2:] if skip else line
         played = _parse_play_line(bare)
         if played is not None and launch in (None, played[1]):
-            launch = played[1]
             steps.append({"config": played[0], "skip": skip})
-        else:
-            steps.append({"command": bare, "skip": skip})
+            if played[2] == run_number(steps, len(steps) - 1):
+                launch = played[1]
+                continue
+            steps.pop()  # a run number of its own: not one the editor can write
+        steps.append({"command": bare, "skip": skip})
     if launch is not None:
         launch["ses"] = int(pinned[1]) if pinned else None
     return steps, launch
 
 
-def play_command(config_path: str, launch: dict, ses: str | None) -> list[str]:
+def play_command(config_path: str, launch: dict, ses: str, run: int) -> list[str]:
     """The command that plays one run: ``fmri-play``, its config and the launch flags.
 
     The editor's Play runs this; a session script holds one per line.
@@ -568,26 +596,27 @@ def play_command(config_path: str, launch: dict, ses: str | None) -> list[str]:
     :param config_path: the run's config file.
     :param launch: the launch flags (see :data:`DEFAULT_LAUNCH`).
     :param ses: the ``--ses`` value -- a number, or :data:`SES_VAR` in a script.
-        ``None`` leaves the flag out, so the run takes the next free session.
+    :param run: the ``--run`` value (see :func:`run_number`).
     :return: the command, word by word.
     """
     root = [] if launch["data_root"] == DATA_ROOT else ["--data-root", launch["data_root"]]
     monitor = ["--monitor", str(launch["monitor"])] if launch["monitor"] else []
     switches = [f"--{key.replace('_', '-')}" for key in SWITCHES if launch[key]]
     return [*PLAY.split(), "--curriculum", config_path, "--subject", launch["subject"], *root,
-            *(["--ses", ses] if ses is not None else []),
+            "--ses", ses, "--run", str(run),
             "--size", launch["size"], *monitor, *switches]
 
 
 def _ses_line(launch: dict) -> str:
+    """``SES=``: the script's own argument, else the number pinned here or the next free one."""
     if launch["ses"] is not None:
-        return f"SES={launch['ses']:03d}"
+        return f"SES=${{1:-{launch['ses']:03d}}}"
     root = [] if launch["data_root"] == DATA_ROOT else ["--data-root", launch["data_root"]]
-    return f"SES=$({_shell([*PLAY.split(), '--subject', launch['subject'], *root, '--next-ses'])})"
+    return f"SES=${{1:-$({_shell([*SES_TOOL.split(), '--subject', launch['subject'], *root])})}}"
 
 
-def _play_line(config_path: str, launch: dict) -> str:
-    return _shell(play_command(config_path, launch, SES_VAR))
+def _play_line(config_path: str, launch: dict, run: int) -> str:
+    return _shell(play_command(config_path, launch, SES_VAR, run))
 
 
 def _shell(command: list[str]) -> str:
@@ -600,13 +629,18 @@ class _Parser(argparse.ArgumentParser):
         raise ValueError(message)
 
 
-def _parse_play_line(line: str) -> tuple[str, dict] | None:
-    """``(config path, launch)`` if ``line`` is a run's line the editor can write, else ``None``."""
+def _parse_play_line(line: str) -> tuple[str, dict, int] | None:
+    """``(config path, launch, run)`` if ``line`` is a run's line the editor can write.
+
+    :return: ``None`` if it is not one -- another command, or flags the editor
+        has no field for -- and the caller then keeps the line as typed.
+    """
     if not line.startswith(PLAY + " "):
         return None
     parser = _Parser(add_help=False, allow_abbrev=False)
     for flag in ("--curriculum", "--subject", "--size", "--ses"):
         parser.add_argument(flag, required=True)
+    parser.add_argument("--run", type=int, required=True)
     parser.add_argument("--data-root", default=DATA_ROOT)
     parser.add_argument("--monitor", type=int, default=0)
     for key in SWITCHES:
@@ -617,7 +651,8 @@ def _parse_play_line(line: str) -> tuple[str, dict] | None:
         return None  # flags the editor has no field for: the caller keeps the line as typed
     if args.pop("ses") != "$SES":
         return None  # a run pinned to a session of its own: not one the editor can write
-    return args.pop("curriculum"), args
+    run = args.pop("run")
+    return args.pop("curriculum"), args, run
 
 
 def edit_config(config: dict, path: str | None,

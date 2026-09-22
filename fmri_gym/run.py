@@ -1,4 +1,9 @@
-"""The engine-agnostic experiment loop.
+"""One run: the engine-agnostic experiment loop that plays one curriculum.
+
+A run is what one config file describes and one ``fmri-play`` plays (the
+BIDS ``run-NNN`` of its folder). A session -- ``ses-NNN``, several runs -- is
+a shell script of those commands and never a Python loop, so nothing here
+knows about more than the curriculum it was given.
 
 Everything here is independent of which game engine is used: trigger wait,
 clock anchoring, the curriculum of phases (fixation / message / game / survey),
@@ -16,13 +21,15 @@ from __future__ import annotations
 import sys
 import time
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pygame
 
+from . import bids
 from .adapters import get_adapter
 from .audio import Audio
-from .display import Display
+from .config import fold_cli_options
+from .display import Display, check_monitor
 from .keys import held_key_names, key_name
 from .logging import Logger
 from .triggers import Triggers
@@ -38,7 +45,7 @@ _SAME_SPEED = 2e-3
 
 
 class Clock:
-    """Anchored at the scanner trigger; gives session + wall-clock time."""
+    """Anchored at the scanner trigger; gives run + wall-clock time."""
 
     def __init__(self) -> None:
         """Create an untriggered clock (``t0_*`` are ``None`` until :meth:`trigger`)."""
@@ -50,15 +57,15 @@ class Clock:
         self.t0_perf = time.perf_counter()
         self.t0_epoch = time.time()
 
-    def session_time(self) -> float:
+    def run_time(self) -> float:
         """Seconds since the scanner trigger (``perf_counter`` based).
 
-        :return: elapsed session time in seconds.
+        :return: seconds since this run's trigger.
         """
         return time.perf_counter() - self.t0_perf
 
     def from_perf(self, t_perf: float) -> float:
-        """Convert a ``perf_counter`` stamp (e.g. a flip time) to session time.
+        """Convert a ``perf_counter`` stamp (e.g. a flip time) to run time.
 
         :param t_perf: a ``time.perf_counter()`` value.
         :return: seconds since the scanner trigger.
@@ -110,8 +117,8 @@ def _poll_keys_until(
 
     :param display: the display, idled between polls.
     :param deadline: ``perf_counter`` at which to stop waiting.
-    :param key_log: list receiving ``(session_time, key_name, is_down)``.
-    :param clock: the session clock for the timestamps.
+    :param key_log: list receiving ``(run_time, key_name, is_down)``.
+    :param clock: the run's clock for the timestamps.
     :param key_to_action: turn-based: map of single key NAMES to env actions.
     :return: ``(action_or_None, user_quit)``; ``action`` is set only in
         turn-based play, ``user_quit`` on window close / ESC.
@@ -128,7 +135,7 @@ def _poll_keys_until(
             if name is None:
                 continue
             down = event.type == pygame.KEYDOWN
-            key_log.append((clock.session_time(), name, down))
+            key_log.append((clock.run_time(), name, down))
             if down and key_to_action and name in key_to_action:
                 return key_to_action[name], False
         if time.perf_counter() >= deadline:
@@ -185,8 +192,8 @@ def _wait_for_duration(display: Display, duration: float) -> None:
         display.idle(end, poll=0.005)
 
 
-class Session:
-    """Runs a curriculum for one subject, dispatching phases to handlers."""
+class Run:
+    """Plays one curriculum for one subject, dispatching phases to handlers."""
 
     def __init__(
         self,
@@ -203,7 +210,7 @@ class Session:
         :param subject: subject identifier used in log paths / manifest.
         :param curriculum: ordered list of phase dicts (``type``, timings, …).
         :param display: shared pygame display used by all phases.
-        :param outdir: directory for the session manifest and game npz files.
+        :param outdir: the run's folder, for its manifest and game npz files.
         :param audio: shared audio output used by all phases; one is created if
             omitted, and stays silent unless an adapter returns sound.
         :param triggers: shared trigger output (start sync + codes; see
@@ -226,6 +233,56 @@ class Session:
         self.stalls: list[dict] = []        # blocks that dropped stalls, for the exit warning
         self.triggers = triggers or Triggers.from_config(None)
         self.sync = self.triggers.sync
+
+    @classmethod
+    def from_config(cls, config: dict, args: Any) -> "Run":
+        """Everything one run needs, from its config and the command line.
+
+        Works out where the run writes and what seeds it plays, then opens the
+        trigger line, the audio output and the window -- in that order, so a
+        bad section, an unopenable port or an unusable output stops the run
+        before anything is on screen. Each says on stderr what it got.
+
+        :param config: the run's config, already checked (``validate_config``).
+        :param args: ``fmri_play``'s parsed flags.
+        :return: the run, ready to :meth:`play`.
+        :raises ValueError: on a BIDS name or number, a monitor or a window
+            size this machine or this subject refuses.
+        """
+        curriculum = config["curriculum"]
+        width, height = (int(x) for x in args.size.lower().split("x"))
+        out = bids.run_output(args.data_root, args.subject, args.curriculum,
+                              args.ses, args.run)
+        if out.attempt > 1:
+            print(f"{out.label} already has data: this is attempt {out.attempt} at it, and "
+                  "writes beside the others", file=sys.stderr)
+        print(f"output: {out.folder}", file=sys.stderr)
+        seeds = bids.fold_seeds(curriculum, out.label)
+        check_monitor(args.monitor)
+        fold_cli_options(curriculum, args)
+
+        triggers = Triggers.from_config(config.get("triggers"))
+        print(f"triggers: {triggers.status()}", file=sys.stderr)
+        if args.dummy_trigger:
+            print("triggers: --dummy-trigger: the experimenter and scanner waits are skipped; "
+                  "this is a test run, not a session", file=sys.stderr)
+        audio = Audio(enabled=not args.no_audio)
+        print(f"audio: {audio.status()}", file=sys.stderr)
+        display = Display(size=(width, height), fullscreen=args.fullscreen,
+                          vsync=not args.no_vsync, monitor=args.monitor)
+        run = cls(args.subject, curriculum, display, out.folder, audio=audio,
+                  triggers=triggers, dummy_trigger=args.dummy_trigger)
+        run.logger.set_extra("run", {"label": out.label, "attempt": out.attempt})
+        run.logger.set_extra("seeds", seeds)
+        run.logger.set_extra("versions", {  # the banner fmri_gym hides said these
+            "pygame": pygame.version.ver, "sdl": ".".join(map(str, pygame.get_sdl_version()))})
+        return run
+
+    def close(self) -> None:
+        """Close the window, the audio output and the trigger line."""
+        self.display.close()
+        self.audio.close()
+        self.triggers.close()
 
     def _trigger(self) -> None:
         """Wait for experimenter ready, sync with the scanner, start the clock.
@@ -266,7 +323,7 @@ class Session:
         _wait_for_duration(self.display, duration)
 
         self.logger.log_phase({"index": index, "type": "fixation",
-                               "onset": onset, "offset": self.clock.session_time()})
+                               "onset": onset, "offset": self.clock.run_time()})
 
     def _message(self, phase: dict, index: int) -> None:
         """Show on-screen text until a key press or timed duration.
@@ -288,7 +345,7 @@ class Session:
             _wait_for_duration(self.display, duration)
 
         self.logger.log_phase({"index": index, "type": "message", "text": text,
-                               "onset": onset, "offset": self.clock.session_time()})
+                               "onset": onset, "offset": self.clock.run_time()})
 
     def _survey(self, phase: dict, index: int) -> None:
         """Run a Likert-style survey and log each confirmed response.
@@ -299,14 +356,14 @@ class Session:
         """
         questions = phase.get("questions", [])
         n_points = phase.get("n_points", 7)
-        onset = self.clock.session_time()
+        onset = self.clock.run_time()
 
         responses = []
         try:
             self._ask(questions, n_points, responses)
         finally:  # a quit mid-survey keeps the answers already confirmed
             self.logger.log_phase({"index": index, "type": "survey",
-                                   "onset": onset, "offset": self.clock.session_time(),
+                                   "onset": onset, "offset": self.clock.run_time(),
                                    "responses": responses})
 
     def _ask(self, questions: list[str], n_points: int, responses: list[dict]) -> None:
@@ -337,7 +394,7 @@ class Session:
                             confirmed = True
                 time.sleep(0.005)
             responses.append({"question": q, "value": value,
-                              "session_time": self.clock.session_time()})
+                              "run_time": self.clock.run_time()})
 
     def _episode(
         self,
@@ -397,7 +454,7 @@ class Session:
                 action = adapter.keyspec.resolve(held_key_names())
 
             obs, reward, terminated, truncated, info = adapter.step(action)
-            t_step = self.clock.session_time()
+            t_step = self.clock.run_time()
             # Anchor a full savestate at episode start and every stride.
             save_blob = (ep_frame % state_stride == 0)
             ep_frame += 1
@@ -422,7 +479,7 @@ class Session:
             frames["terminated"].append(bool(terminated))
             frames["truncated"].append(bool(truncated))
             frames["episode_id"].append(episode_id)
-            frames["session_time"].append(t_step)
+            frames["run_time"].append(t_step)
             frames["flip_time"].append(self.clock.from_perf(flip_t))
             frames["audio_chunk"].append(self.audio.last_chunk)
             frames["wall_time"].append(self.clock.wall_time())
@@ -501,7 +558,7 @@ class Session:
         locked = self.display.vsync and self.display.refresh_rate
         flip_period = 1 / self.display.refresh_rate if locked else None
         self.audio.start(frame_period=None if turn_based else dt, flip_period=flip_period)
-        onset = self.clock.session_time()
+        onset = self.clock.run_time()
         block_end = time.perf_counter() + cap
         episode_id = 0
         user_quit = False
@@ -536,7 +593,7 @@ class Session:
         self.logger.log_phase({
             "index": index, "type": "game", "backend": backend,
             "game": phase["game"], "mode": mode,
-            "onset": onset, "offset": self.clock.session_time(),
+            "onset": onset, "offset": self.clock.run_time(),
             "n_episodes": episode_id, "n_frames": len(frames["action"]),
             "n_pacing_resets": len(frames["pacing_reset"]),
             "total_reward": sum(float(r) for r in frames["reward"]),
@@ -579,10 +636,10 @@ class Session:
         self.stalls.append(stall)
         print(_stall_warning(stall), file=sys.stderr)
 
-    def run(self) -> bool:
-        """Run the full curriculum: trigger wait, then each phase in order.
+    def play(self) -> bool:
+        """Play the full curriculum: trigger wait, then each phase in order.
 
-        Always writes the session manifest in ``finally``, including after an
+        Always writes the run's manifest in ``finally``, including after an
         interrupt (partial data).
 
         :return: ``True`` if the curriculum played to its end, ``False`` if it
@@ -611,7 +668,7 @@ class Session:
             self.logger.set_extra("triggers", self.triggers.describe(self.clock))
             self.logger.set_extra("stalls", self.stalls)
             manifest_path = self.logger.save_manifest()
-            print(f"Saved session to: {self.outdir}")
+            print(f"Saved run to: {self.outdir}")
             print(f"Manifest: {manifest_path}")
             for stall in self.stalls:
                 print(_stall_warning(stall), file=sys.stderr)
