@@ -1341,8 +1341,10 @@ class _Editor(QtWidgets.QMainWindow):
         templates = {"fixation": {"type": "fixation", "duration": 2.0},
                      "message": {"type": "message", "text": "", "duration": 2.0},
                      "survey": {"type": "survey", "n_points": 7, "questions": []},
+                     # No fps: Check names it, as it does the empty game id -- the rate
+                     # belongs to the game about to be picked, not to this template.
                      "game": {"type": "game", "backend": "gym", "game": "", "mode": "duration",
-                              "duration": 30.0}}  # no fps: the engine's own rate
+                              "duration": 30.0}}
         self._insert_phase(templates[kind])
 
     def _duplicate_phase(self) -> None:
@@ -1432,8 +1434,9 @@ class _Editor(QtWidgets.QMainWindow):
             self.defaults_text.setPlainText(f"could not build the adapter: {exc}")
             return
         body = "\n".join(f"{k:<16} {gui.format_action(v)}" for k, v in self._defaults.items())
-        rate = (f"{native:g} steps/s, this engine's own rate: what a blank fps plays at"
-                if native is not None else "no rate of its own: a blank fps plays at 30 steps/s")
+        rate = (f"{native:g} steps/s, this engine's own rate: write it in fps to play the game "
+                "at its real speed" if native is not None else
+                "no rate of its own: fps is yours to pick (30 suits most)")
         self.defaults_text.setPlainText(f"{phase.get('backend')} defaults for "
                                         f"{phase.get('game')}:\n{body}\n{rate}")
 

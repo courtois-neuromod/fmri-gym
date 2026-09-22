@@ -509,11 +509,11 @@ in `--gui --session configs/ses_dbp_mix.sh` to change any of that, or
  "duration": 30.0,              // seconds (duration mode)
  "n_episodes": 1,               // episodes (episode mode)
  "max_duration": 300.0,         // hard wall-clock safety cap (episode mode)
- "fps": 30,                     // optional: steps (and frames) per second. Left out, the engine's
-                                // own rate (console cores and Atari ~60, Doom 35 / frame_skip), so
-                                // the game plays at its real speed and its sound fits; 30 where the
-                                // engine has no clock of its own. Set one to play slower or faster;
-                                // the manifest logs "speed" and the console says so when it is not 1
+ "fps": 30,                     // required: steps (and frames) per second. The engine's own rate
+                                // (console cores and Atari ~60, Doom 35 / frame_skip) plays the game
+                                // at its real speed and fits its sound; the editor's Controls tab
+                                // shows it. Any other value plays the game slower or faster: the
+                                // manifest logs "speed" and the console says so when it is not 1
  "turn_based": false,           // step only on a key PRESS, not per frame (grid/toy_text games)
  "seed": 1234,                  // optional base seed: episodes play with seed, seed+1, ...
                                 // Pinned, every participant and run gets the same episodes.
@@ -645,9 +645,8 @@ actually obtained (`vsync`, measured at start-up; `refresh_rate`).
   divides the refresh rate (30 or 60 on a 60 Hz screen) shows every frame for
   the same number of refreshes; otherwise frames alternate between one and two
   and each onset can be up to one refresh late. `flip_time` records what
-  happened either way. The engine's own rate, which a blank `fps` takes, is
-  59.92 for some cores: close enough to 60 Hz that one frame in ~800 is shown
-  twice.
+  happened either way. Some cores' own rate is 59.92: close enough to 60 Hz
+  that one frame in ~800 is shown twice.
 - Check that the rig locks to the refresh before a session:
   `python -m fmri_gym.display --fullscreen` (verdict LOCKED / NOT locked; if
   not, use fullscreen and disable the desktop compositor). `--no-vsync` turns

@@ -155,10 +155,10 @@ _GAME_FIELDS = [
     Field("max_duration", "max_duration (s)", "float",
           tip="episode mode: hard wall-clock cap for the block."),
     Field("fps", "fps", "float",
-          tip="Steps per second. Blank (the usual): the engine's own rate, so the game plays at "
-              "its real speed and its sound fits (60 for consoles and Atari, 35 / frame_skip for "
-              "Doom); 30 where the engine has no clock of its own. Set one only to play slower "
-              "or faster, and pick one that divides the monitor's refresh."),
+          tip="Steps per second. Required: every block states its own rate. The engine's own "
+              "rate plays the game at its real speed and fits its sound (60 for consoles and "
+              "Atari, 35 / frame_skip for Doom); Controls > backend defaults shows what this "
+              "engine runs at. Pick one that divides the monitor's refresh."),
     Field("turn_based", "turn_based", "bool", default=False,
           tip="Step only on a key press instead of every frame (grid / text games)."),
     Field("seed", "seed", "int",

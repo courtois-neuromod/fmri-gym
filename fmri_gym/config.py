@@ -153,7 +153,25 @@ def _phase_problems(phase: dict) -> list[str]:
         out.append("game: missing env id")
     if phase.get("mode", "duration") not in ("duration", "episode"):
         out.append(f"mode: expected 'duration' or 'episode', got {phase.get('mode')!r}")
+    out.extend(_fps_problems(phase))
     return out
+
+
+def _fps_problems(phase: dict) -> list[str]:
+    """``fps`` is required: a block's rate is the config's, not the engine's.
+
+    It was the engine's own rate when the phase left it out, so the same file
+    played at a different speed depending on the backend underneath it -- and
+    silently changed rate when that backend did. The editor's Controls tab
+    shows what the engine runs at, to write here.
+    """
+    fps = phase.get("fps")
+    if fps is None:
+        return ["fps: missing; state the block's steps per second (the engine's own rate is "
+                "not assumed: 60 for console cores and Atari, 35 / frame_skip for Doom)"]
+    if isinstance(fps, bool) or not isinstance(fps, (int, float)) or fps <= 0:
+        return [f"fps: expected a positive number of steps per second, got {fps!r}"]
+    return []
 
 
 def trigger_problems(section: dict | None) -> list[str]:

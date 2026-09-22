@@ -32,9 +32,6 @@ if TYPE_CHECKING:
 
 TRIGGER_KEY = "="
 EXPERIMENTER_KEY = " "
-#: Steps per second of a phase that asks for none, on an engine with no clock of
-#: its own (a grid world, a puzzle): the screen's business, not the game's.
-_DEFAULT_FPS = 30
 #: How far ``fps`` may sit from the engine's own rate and still count as real
 #: speed: what the audio output absorbs by resampling.
 _SAME_SPEED = 2e-3
@@ -483,14 +480,17 @@ class Session:
         if not isinstance(play_sound, bool):
             raise ValueError(f'game phase {index}: "audio" must be true or false, '
                              f"got {play_sound!r}")
+        # Every game phase states its own fps (validate_config refuses one that
+        # does not): what the block plays at is the config's business, not a
+        # default that changes with the engine underneath it.
+        fps = phase["fps"]
+        dt = 1.0 / fps
 
         # Some backends (nle, browser games) take several seconds to start;
         # show a Loading screen so the previous fixation "+" doesn't freeze.
         self.display.draw_text(
             f"Loading {phase.get('text') or phase.get('game', 'game')} …")
         adapter = get_adapter(backend, phase)
-        fps = self._fps(adapter, phase)
-        dt = 1.0 / fps
         speed = {} if turn_based else self._speed(adapter, fps, index, phase["game"])
 
         ## Frame logging
@@ -545,24 +545,6 @@ class Session:
         self._note_stalls(index, phase["game"], frames["pacing_reset"])
         if user_quit:
             raise KeyboardInterrupt
-
-    def _fps(self, adapter: EnvAdapter, phase: dict) -> float:
-        """The block's steps per second: the phase's ``fps``, or the engine's own rate.
-
-        An engine with a clock of its own (:meth:`EnvAdapter.native_fps`) plays
-        at real speed, and makes one step's sound per step, only at that rate --
-        so it is what a phase asking for no other gets.
-
-        :param adapter: the block's adapter.
-        :param phase: the game phase.
-        :return: steps per second (:data:`_DEFAULT_FPS` for an engine with no
-            clock of its own).
-        """
-        fps = phase.get("fps")
-        if fps is not None:
-            return fps
-        native = adapter.native_fps()
-        return native if native is not None else _DEFAULT_FPS
 
     def _speed(self, adapter: EnvAdapter, fps: float, index: int, game: str) -> dict:
         """The block's speed against the engine's own clock, said aloud when it is not 1.
