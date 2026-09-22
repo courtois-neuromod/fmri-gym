@@ -93,13 +93,6 @@ def _check_quit() -> bool:
     return False
 
 
-def _stall_warning(stall: dict) -> str:
-    """The console warning for a block that dropped stalls (see ``Session.stalls``)."""
-    return (f"WARNING pacing: block {stall['phase']} ({stall['game']}) stalled {stall['n']}x, "
-            f"longest {stall['longest_ms']:.0f} ms late: its frames fell behind schedule there "
-            "(pacing_reset_time in its npz)")
-
-
 def _poll_keys_until(
     display: Display,
     deadline: float,
@@ -230,7 +223,6 @@ class Run:
         self.logger.set_extra("dummy_trigger", dummy_trigger)
         self.logger.set_extra("audio", self.audio.describe())
         self.outdir = outdir
-        self.stalls: list[dict] = []        # blocks that dropped stalls, for the exit warning
         self.triggers = triggers or Triggers.from_config(None)
         self.sync = self.triggers.sync
 
@@ -442,6 +434,7 @@ class Run:
             # Wait for the frame tick (turn-based: for a mapped keydown, up to
             # the block end), polling keys as we go so presses are stamped on
             # arrival; a vsync-locked display re-presents the frame meanwhile.
+            # TODO(#43): anchor the wait to the last step (t_step + dt), not to the flip.
             deadline = block_end if turn_based else next_t
             action, user_quit = _poll_keys_until(
                 self.display, deadline, key_log, self.clock, key_to_action)
@@ -465,6 +458,7 @@ class Run:
             # More than a frame behind (a stall): drop the debt, or it is repaid
             # as a burst of one-refresh frames. The frame of slack is what a
             # vsync-locked flip normally lands after its tick.
+            # TODO(#43): why frames fall behind at all is not established.
             if not turn_based and next_t + dt < flip_t:
                 late = flip_t - (next_t - dt)
                 frames["pacing_reset"].append((self.clock.from_perf(flip_t), late))
@@ -599,7 +593,6 @@ class Run:
             "total_reward": sum(float(r) for r in frames["reward"]),
             "data_file": path.split("/")[-1], **speed,
         })
-        self._note_stalls(index, phase["game"], frames["pacing_reset"])
         if user_quit:
             raise KeyboardInterrupt
 
@@ -621,20 +614,6 @@ class Run:
             print(f"phase {index} ({game}): fps {fps:g} against the engine's own {native:g} -- "
                   f"the game plays at {speed:.2f}x its real speed", file=sys.stderr)
         return {"native_fps": native, "speed": speed}
-
-    def _note_stalls(self, index: int, game: str, resets: list) -> None:
-        """Warn about a block's dropped stalls now; :meth:`run` repeats it at exit.
-
-        :param index: the block's phase index.
-        :param game: its game id.
-        :param resets: the block's ``(flip time, seconds late)`` pacing resets.
-        """
-        if not resets:
-            return
-        stall = {"phase": index, "game": game, "n": len(resets),
-                 "longest_ms": max(late for _, late in resets) * 1000}
-        self.stalls.append(stall)
-        print(_stall_warning(stall), file=sys.stderr)
 
     def play(self) -> bool:
         """Play the full curriculum: trigger wait, then each phase in order.
@@ -666,10 +645,7 @@ class Run:
             if self.clock.t0_perf is not None:
                 self.triggers.lifecycle("task_stop")
             self.logger.set_extra("triggers", self.triggers.describe(self.clock))
-            self.logger.set_extra("stalls", self.stalls)
             manifest_path = self.logger.save_manifest()
             print(f"Saved run to: {self.outdir}")
             print(f"Manifest: {manifest_path}")
-            for stall in self.stalls:
-                print(_stall_warning(stall), file=sys.stderr)
         return completed
