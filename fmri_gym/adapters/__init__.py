@@ -57,6 +57,9 @@ def get_adapter(backend: str, spec: dict) -> EnvAdapter:
     if backend == "vizdoom":
         from .vizdoom import VizDoomAdapter
         return VizDoomAdapter(spec)
+    if backend == "coom":
+        from .coom import COOMAdapter
+        return COOMAdapter(spec)
     if backend == "nethack":
         from .nethack import NetHackAdapter
         return NetHackAdapter(spec)

@@ -46,23 +46,27 @@ Chrome, install the bundled Chromium instead:
 playwright install chromium   # then set "browser_channel": null in the phase if needed
 ```
 
+
+
 ## 2. How a session works
 
 ```bash
 uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/<game>.json
 ```
 
-| Flag / key | What it does |
-|---|---|
-| `--subject sub-01` | Subject id used in the output folder name |
-| **SPACE** | Advance past the experimenter screen |
-| **`=`** | Scanner trigger (anchors the session clock) |
-| **ESC** | Quit early; data is still saved |
+
+| Flag / key         | What it does                                |
+| ------------------ | ------------------------------------------- |
+| `--subject sub-01` | Subject id used in the output folder name   |
+| **SPACE**          | Advance past the experimenter screen        |
+| `=`                | Scanner trigger (anchors the session clock) |
+| **ESC**            | Quit early; data is still saved             |
+
 
 Each config is a short curriculum: message → fixation → game (~300 s, auto-restarts
 on game-over) → fixation. Output lands in `data/<subject>_<timestamp>/`.
 
-Runtime: experimenter screen (**SPACE**) → "Waiting for scanner..." → trigger **`=`** → curriculum.
+Runtime: experimenter screen (**SPACE**) → "Waiting for scanner..." → trigger `=` → curriculum.
 
 stable-retro games play their native audio, and ViZDoom does when its config sets
 `env_kwargs.audio_buffer_enabled`. Add `--no-audio` to mute every game, or set
@@ -76,18 +80,62 @@ All commands assume you're in the repo root with `fmri-gym` activated.
 
 ### ViZDoom
 
+All ten stock scenarios, one line each:
+
 ```bash
-uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__defend_center.json
-uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__deadly_corridor.json
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__basic.json                      # strafe and shoot one monster
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__deadly_corridor.json            # fight down a corridor to the vest
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__deathmatch.json                 # arena, full arsenal, scored by kills
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__defend_center.json              # surrounded; turn and shoot
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__defend_line.json                # they advance down a hall and respawn
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__health_gathering_supreme.json   # acid-floor maze; find medikits
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__my_way_home.json                # navigate a 9-room maze to the vest
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__predict_position.json           # lead a moving target with a rocket
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__take_cover.json                 # no weapon; dodge fireballs
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/vizdoom__take_cover_defend_line.json     # those last two back to back, 150 s each
 ```
 
-Controls: arrows move/turn, Z/X strafe, SPACE shoots.
+Controls: arrows move/turn, Z/X strafe, SPACE shoots — but each scenario only
+has the buttons its `.cfg` declares, so the arrows *strafe* in Basic and Take
+Cover (no turning), there is no SPACE in Health Gathering / My Way Home / Take
+Cover (no weapon), and Deathmatch adds N/M to switch weapons and S to run. Each
+config's controls message lists exactly what that scenario accepts.
+
+### COOM
+
+COOM's own Doom scenarios (not the stock ViZDoom ones above). Set-up is a
+checkout — the COOM package itself is never installed (its `gymnasium` pin
+conflicts), only its scenario assets are read:
+
+```bash
+git clone https://github.com/TTomilin/COOM.git ../COOM
+export COOM_REPO=../COOM          # or pass --coom-repo ../COOM per run
+```
+
+```bash
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__pitfall.json          # cross a corridor of randomized pits
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__chainsaw.json         # hunt maze enemies at melee range
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__run_and_gun.json      # find and shoot maze enemies
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__health_gathering.json # draining floor; collect health kits
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__hide_and_seek.json    # evade enemies, grab kits when low
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__arms_dealer.json      # collect weapons, deliver to platforms
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__floor_is_lava.json    # stay on the briefly-appearing platforms
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__parkour.json          # jump the gaps and ledges
+uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__raise_the_roof.json   # press wall switches before the ceiling crushes you
+```
+
+Controls: UP moves forward, LEFT/RIGHT turn, and the scenario's one extra
+button is SPACE (pitfall, chainsaw, run_and_gun, parkour), LSHIFT
+(health_gathering, hide_and_seek, arms_dealer, floor_is_lava) or E
+(raise_the_roof). No native audio on this backend yet.
 
 ### Crafter
 
 ```bash
 uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/crafter__crafter.json
 ```
+
+
 
 ### Rush Hour
 
@@ -106,6 +154,8 @@ The engine binary is fetched on first run (see §1); nothing to build.
 ```bash
 uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/baba__make_win.json
 ```
+
+
 
 ### AI GameStore (p5.js browser games)
 
@@ -151,9 +201,10 @@ Controls: arrows steer/accelerate/brake, SPACE fire, Z drift, X nitro.
 
 - Useful flags: `--size 1280x1024`, `--fullscreen`, `--no-vsync`.
 - Before a MEG/EEG session, check that flips lock to the refresh on the
-  presentation machine: `python -m fmri_gym.display --fullscreen`.
+presentation machine: `python -m fmri_gym.display --fullscreen`.
 - Once per rig, measure the flip-to-photon offset with a photodiode on the
-  screen: `python -m fmri_gym.photodiode --fullscreen` (see README "Timing").
+screen: `python -m fmri_gym.photodiode --fullscreen` (see README "Timing").
 - Archived / unsupported configs live under `configs/dbp_games/archive/` and
-  `configs/dbp_games/unsupported/` — see the README for the wider game list.
+`configs/dbp_games/unsupported/` — see the README for the wider game list.
 - Per-config `_note` / `_game` fields document setup quirks for that title.
+
