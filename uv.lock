@@ -703,6 +703,9 @@ baba = [
 box2d = [
     { name = "gymnasium", extra = ["box2d"] },
 ]
+coom = [
+    { name = "vizdoom" },
+]
 crafter = [
     { name = "crafter" },
 ]
@@ -783,9 +786,10 @@ requires-dist = [
     { name = "sounddevice" },
     { name = "stable-retro", marker = "extra == 'retro'" },
     { name = "tile-match-gym", marker = "extra == 'tilematch'" },
+    { name = "vizdoom", marker = "extra == 'coom'" },
     { name = "vizdoom", marker = "extra == 'vizdoom'" },
 ]
-provides-extras = ["ale", "retro", "crafter", "minihack", "nethack", "aigamestore", "vizdoom", "overcooked", "baba", "rushhour", "supertuxkart", "box2d", "mujoco", "shimmy", "tilematch", "triggers", "dbp", "all"]
+provides-extras = ["ale", "retro", "crafter", "minihack", "nethack", "aigamestore", "vizdoom", "coom", "overcooked", "baba", "rushhour", "supertuxkart", "box2d", "mujoco", "shimmy", "tilematch", "triggers", "dbp", "all"]
 
 [[package]]
 name = "fonttools"
