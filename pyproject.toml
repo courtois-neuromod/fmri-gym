@@ -52,6 +52,9 @@ shimmy = ["shimmy"]  # old-`gym` envs via "legacy_gym": true
 tilematch = ["tile-match-gym"]  # display + logging only
 # MEG/EEG trigger backends (README "Triggers"): `triggers.backend` lsl / serial / parallel.
 triggers = ["pylsl", "pyserial", "pyparallel"]
+# The fmri-edit config editor. Essentials is the widgets half of PySide6 (LGPL),
+# without the WebEngine/3D add-ons, which would triple the download.
+gui = ["PySide6-Essentials>=6.6"]
 
 # The nine DBP picks (DBP_FINAL_LIST.md). Not installable from an index and
 # therefore not listed: craftium (prebuilt wheel on its GitHub releases) and
@@ -60,11 +63,17 @@ dbp = [
     "fmri-gym[vizdoom,aigamestore,crafter,rushhour,baba,minihack,supertuxkart,stk_gym,overcooked]",
 ]
 all = [
-    "fmri-gym[dbp,ale,retro,nethack,box2d,mujoco,shimmy,tilematch,triggers]",
+    "fmri-gym[dbp,ale,retro,nethack,box2d,mujoco,shimmy,tilematch,triggers,gui]",
 ]
 
 [project.scripts]
 fmri-play = "fmri_play:main"
+# The config editor (the `gui` extra). Separate from fmri-play, which only ever
+# plays one run: what Play starts there is an fmri-play command like any other.
+fmri-edit = "fmri_gym.gui:main"
+# The next free session number for a subject: a session script's first line, so
+# all of its runs land in one session. Nothing else reads the disk for a number.
+fmri-ses = "fmri_gym.bids:main"
 
 [tool.setuptools]
 packages = ["fmri_gym", "fmri_gym.adapters"]

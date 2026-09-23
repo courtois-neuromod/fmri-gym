@@ -51,7 +51,7 @@ class EnvAdapter:
     An EnvAdapter WRAPS one game environment for one game block: it builds the
     underlying engine env in ``__init__`` and keeps it (and any per-block state)
     private, exposing only the small interface the experiment loop needs. The
-    loop (session.py) never sees the raw env, ``env.unwrapped``, or any
+    loop (run.py) never sees the raw env, ``env.unwrapped``, or any
     engine-specific API -- it just calls the methods below on the wrapper.
 
     A fresh EnvAdapter is constructed per game block (see
@@ -185,6 +185,25 @@ class EnvAdapter:
         :meth:`capture` too.
 
         :return: a :class:`Sound`, or ``None`` if there is nothing to play.
+        """
+        return None
+
+    def native_fps(self) -> float | None:
+        """Steps per second at which the engine plays at its own real speed, or ``None``.
+
+        An engine with a clock of its own (an emulator core's frame rate, a
+        tic rate) advances a fixed amount of game time per step, so the block's
+        ``fps`` decides how fast the game is, and people and models should meet
+        the same game. The session does not enforce it -- ``fps`` has to suit
+        the display, and a slowed-down block can be a choice -- it reports
+        ``fps / native_fps`` in the manifest and says so when they differ.
+        Default is ``None``: no clock of its own (a grid world, a turn-based
+        puzzle), where ``fps`` is only how often the screen is redrawn.
+
+        Read it from the live env where the engine tells; divide by any frame
+        skip the env was built with.
+
+        :return: steps per second at real speed, or ``None``.
         """
         return None
 

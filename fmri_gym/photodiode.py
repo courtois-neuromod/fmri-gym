@@ -305,6 +305,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--size", default="1024x768")
     p.add_argument("--fullscreen", action="store_true")
+    p.add_argument("--monitor", type=int, default=0,
+                   help="which monitor: the one the sessions use, since the offset is its own")
     p.add_argument("--no-vsync", action="store_true")
     p.add_argument("--config", help="curriculum/config JSON whose triggers section to use")
     p.add_argument("--trigger-backend", choices=("null", "lsl", "serial", "parallel"))
@@ -333,7 +335,8 @@ def main() -> None:
     w, h = (int(x) for x in args.size.lower().split("x"))
     triggers = Triggers(_trigger_settings(args))    # before the window: fails at the desk
     audio = _audio_output() if args.audio_click else None
-    display = Display((w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync)
+    display = Display((w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync,
+                      monitor=args.monitor)
     click, chunks = _clicker(audio) if audio is not None else (None, [])
     recorder = None
     if args.audio:

@@ -45,7 +45,7 @@ With [uv](https://docs.astral.sh/uv/):
 ```bash
 sudo apt install libportaudio2               # PortAudio; every backend needs it
 uv sync --extra dbp                          # .venv/ with the nine DBP backends, pinned by uv.lock
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json --ses 1 --run 1
 ```
 
 `dbp` is the nine DBP games. Each backend is also its own extra (`ale`,
@@ -57,7 +57,7 @@ Without uv: pip into a venv of your own, and `python fmri_play.py` in place of
 
 ```bash
 pip install -e ".[dbp]"            # private default index? add --index-url https://pypi.org/simple
-python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
+python fmri_play.py --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json --ses 1 --run 1
 ```
 
 Atari ROMs ship with `ale-py`. For the `retro` backend you must supply and
@@ -70,24 +70,40 @@ SuperTuxKart, [Running SuperTuxKart from the stk-code fork](#running-supertuxkar
 
 ```bash
 # --- per-family demo curricula (all tested end-to-end; ~15 s per block) ---
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_atari.json    # 10 popular Atari games
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_classic.json  # all 5 classic-control
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_text.json     # all 5 toy_text (render RGB; turn-based, arrow keys)
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_box2d.json     # LunarLander, BipedalWalker, CarRacing  (`box2d` extra)
-MUJOCO_GL=egl uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_mujoco.json   # 10 MuJoCo tasks  (`mujoco` extra)
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_aigamestore.json  # 10 AI GameStore p5.js games (`aigamestore` extra; see below)
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_atari.json --ses 1 --run 1    # 10 popular Atari games
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_classic.json --ses 1 --run 1  # all 5 classic-control
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_text.json --ses 1 --run 1     # all 5 toy_text (render RGB; turn-based, arrow keys)
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_box2d.json --ses 1 --run 1     # LunarLander, BipedalWalker, CarRacing  (`box2d` extra)
+MUJOCO_GL=egl uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_mujoco.json --ses 1 --run 1   # 10 MuJoCo tasks  (`mujoco` extra)
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_aigamestore.json --ses 1 --run 1  # 10 AI GameStore p5.js games (`aigamestore` extra; see below)
 VGDL_REPO=../language_and_experience PYTHONPATH=../language_and_experience \
-  uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_vgdl_all.json   # all 10 VGDL games (see below)
+  uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_vgdl_all.json --ses 1 --run 1   # all 10 VGDL games (see below)
 
 # demo_mixed spans EVERY backend in one session (Pong/ale, Airstriker/retro,
 # Crafter, MiniHack, Aliens/vgdl, MountainCar/classic, FrozenLake/toy_text,
 # CarRacing/box2d, WaterSort/aigamestore) -- needs the VGDL repo + box2d-py +
 # crafter + minihack + playwright:
 VGDL_REPO=../language_and_experience PYTHONPATH=../language_and_experience \
-  uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_mixed.json
+  uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_mixed.json --ses 1 --run 1
 
 # Play ONE game on its own, for a long stretch (see configs/dbp_games/):
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json --ses 1 --run 1
+```
+
+A run is a JSON file and a session is a `.sh` script (below). Write them by
+hand, or design them in `fmri-edit` -- either way `fmri-play` reads the same
+files, and refuses one it cannot play. `fmri-play` plays one run and nothing
+else; the editor is a command of its own, which opens on a run, a session, or
+a new run. **Play** there saves what it shows and starts it: an `fmri-play`
+command for a run, the script itself for a session. Its Launch tab holds the
+flags of that launch (subject, session, monitor, window, the test switches),
+which belong to the launch, not to the files. The editor is the `gui` extra:
+
+```bash
+uv sync --extra dbp --extra gui
+uv run fmri-edit --curriculum configs/demo_meg.json
+uv run fmri-edit --session configs/ses1.sh
+uv run fmri-edit                                    # start from a new run
 ```
 
 Drop `--dummy-trigger` for a real session (then press SPACE, then wait for the
@@ -113,9 +129,9 @@ the DBP game spreadsheet, so you can play any single game on its own for a long
 stretch with a one-line command. Filenames are `<class>__<game>.json`:
 
 ```bash
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/text__frozenlake.json
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/aigamestore__game1.json
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/atari__pong.json --ses 1 --run 1
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/text__frozenlake.json --ses 1 --run 1
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/aigamestore__game1.json --ses 1 --run 1
 ```
 
 Each is a minimal `message → fixation → game (300 s) → fixation` curriculum with
@@ -158,7 +174,9 @@ playwright, box2d-py, MuJoCo GL, ROM import).
 Runtime flow: experimenter screen (**SPACE**) → "Waiting for scanner..." →
 scanner **trigger `=`** (anchors the session clock) → curriculum phases → done.
 `ESC` quits early but still saves. Flags: `--size 1280x1024`, `--fullscreen`,
-`--no-vsync` (see [Timing](#timing-what-is-stamped-when)), `--save-pixels` (ALE only; see below).
+`--monitor 1` (which screen, when there are several), `--no-vsync` (see
+[Timing](#timing-what-is-stamped-when)). The editor opens on its Launch tab,
+fullscreen ticked and the monitor picked there.
 
 ## Running stable-retro games
 
@@ -220,7 +238,7 @@ same `fmri-gym` env works.
    ```bash
    VGDL_REPO=../language_and_experience \
    PYTHONPATH=../language_and_experience \
-     uv run fmri-play --subject sub-01 --curriculum configs/demo_vgdl_all.json
+     uv run fmri-play --subject sub-01 --curriculum configs/demo_vgdl_all.json --ses 1 --run 1
    ```
 
    `VGDL_REPO` locates the game/level/sprite files; a phase can also override it
@@ -260,7 +278,7 @@ config/WAD files, read straight off disk from a checkout:
 
    ```bash
    COOM_REPO=../COOM \
-     uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__pitfall.json
+     uv run fmri-play --subject sub-01 --curriculum configs/dbp_games/coom__pitfall.json --ses 1 --run 1
    ```
 
    `COOM_REPO` locates `<repo>/COOM/env/scenarios/<scenario>/conf.cfg` and
@@ -305,7 +323,7 @@ Run the 10 vendored public games (each keyboard-controlled — arrows + SPACE/Z/
 ENTER; `game1` = Water Sort, `game2` ≈ Angry Birds, …):
 
 ```bash
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_aigamestore.json
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/demo_aigamestore.json --ses 1 --run 1
 ```
 
 Phase fields: `game` (`"game1"`…`"game10"`, or an `http(s)://…/index.html`
@@ -335,8 +353,8 @@ x86-64). On a machine without network, run a config once while online or copy
 that directory; `RUSHHOUR_ENV_BIN` names a binary of your own.
 
 ```bash
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__easy.json      # 5 min of random easy puzzles
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__complete.json   # the program's session then the rest of the library: 49 puzzles, one block each
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__easy.json --ses 1 --run 1      # 5 min of random easy puzzles
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/rushhour__complete.json --ses 1 --run 1   # the program's session then the rest of the library: 49 puzzles, one block each
 ```
 
 Controls, phase fields and the logged columns are documented in the configs'
@@ -357,7 +375,7 @@ backend (pystk2) is untouched; the two coexist.
 
 ```bash
 uv pip install "fmri-gym[stk_gym]"      # or: pip install supertuxkart-gym
-uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/stk_gym__race.json
+uv run fmri-play --subject sub-01 --dummy-trigger --curriculum configs/dbp_games/stk_gym__race.json --ses 1 --run 1
 ```
 
 No checkout and no build: the wheel is pure Python and fetches the game with a
@@ -386,7 +404,7 @@ the keys, the phase fields and the logged columns, and the fork's
 
 ```
 fmri_gym/
-  session.py        # trigger, clock, curriculum loop, phases  — 100% engine-agnostic
+  run.py        # trigger, clock, curriculum loop, phases  — 100% engine-agnostic
   display.py        # pygame: fixed window, aspect-fit frame, fixation, text; vsync-locked flip + call_on_flip
   logging.py        # manifest.json + one compressed .npz per game block
   triggers.py       # run-start sync (wait/send/none) + MEG/EEG trigger codes over lsl/serial/parallel
@@ -408,7 +426,7 @@ configs/            # example curricula
 vendor/aigamestore/ # the 10 public AI GameStore games (p5.js/HTML/JS)
 ```
 
-The loop (`session.py`) only ever calls the adapter — never `env.unwrapped`, an
+The loop (`run.py`) only ever calls the adapter — never `env.unwrapped`, an
 emulator, or an engine module. Each engine-specific concern lives behind
 **`EnvAdapter`**:
 
@@ -433,7 +451,66 @@ class EnvAdapter:
 
 ## Curriculum format
 
-An ordered JSON list of **phases** (bare list or `{"curriculum": [...]}`):
+A **run** is one JSON file: a `"curriculum"` of phases, an optional
+`"triggers"` section (below), and `_`-prefixed notes. A bare list, an unknown
+top-level key or an unknown phase `type` stops the run at start-up with the
+reason.
+
+One config is one run. A whole scanning session is a plain shell script with
+one line per run, in order -- so every run is a process of its own, with a
+fresh interpreter, display and trigger port:
+
+```sh
+#!/bin/sh
+# fmri-gym session: one line per run, in order.
+set -e
+SES=${1:-$(uv run fmri-ses --subject sub-01)}
+uv run fmri-play --curriculum configs/pong.json --subject sub-01 --ses "$SES" --run 1 --size 1024x768
+./scripts/localizer.sh "$SES"
+# uv run fmri-play --curriculum configs/mario.json --subject sub-01 --ses "$SES" --run 1 --size 1024x768
+```
+
+**The numbers come from the script, not from the disk.** The `SES=` line picks
+the session once, so every run lands in it: the script's own argument if it was
+given one (`sh ses1.sh 003` resumes session 3), else the subject's next free
+session. Each run states its `--run`, which is its place among the lines that
+play that task -- so it is the same run number however the session went, and
+skipping a line renumbers nothing after it. Both flags are required of
+`fmri-play`: it never picks a number itself.
+
+A run whose folder already has data is **re-acquired, never overwritten**: it
+writes to `..._02` (then `_03`) beside the attempt that stopped. The suffix
+names the folder only, so the re-acquisition replays the same episodes as the
+run it replaces.
+
+`set -e` stops the script at the first run that fails or is quit with ESC
+(`fmri-play` then exits with status 3). A line that is not an `fmri-play` run
+is any command of yours, as typed; a commented line is a skipped run, which is
+how a stopped session is resumed. Write it by hand, or in `fmri-edit`, whose Session manager tab
+has two panels, each a form and the text it stands for: Session design (the
+list of lines -- add an existing or a new config, an external script; repeat,
+reorder, skip, "Start here" -- or the script itself) and Run design (the
+selected run's phases, or its JSON). Each panel starts with a drop-down of what
+`configs/` holds: the Session one opens a script, the Run one opens a config
+(or, in a session, adds it after the selected line); File > Open takes a `.sh`
+like a `.json` from anywhere. Save writes the script and the configs you
+edited. Run it from the repo root: `sh configs/ses1.sh`.
+
+Three example sessions of about an hour each ship in `configs/` -- eleven
+runs of one DBP game apiece (5 min of play, plus the instructions screen and
+the start-up between runs):
+
+```bash
+sh configs/ses_dbp_mix.sh      # one run per genre: Crafter, COOM, MiniHack, Rush Hour, Baba, ViZDoom, AI GameStore...
+sh configs/ses_dbp_doom.sh     # the nine COOM scenarios, then two ViZDoom ones
+sh configs/ses_dbp_puzzle.sh   # nine AI GameStore puzzles, Rush Hour, Baba Is You
+sh configs/ses_dbp_mix.sh 003  # ... into session 3: how one that stopped is resumed
+```
+
+They assume `sub-01` and a 1024x768 window, and take the subject's next free
+session unless given one: open one in `fmri-edit --session
+configs/ses_dbp_mix.sh` to change any of that, or `--dummy-trigger` a run of
+it at the desk.
 
 ```jsonc
 {"type": "fixation", "duration": 2.0}                 // "+" for N seconds
@@ -447,15 +524,25 @@ An ordered JSON list of **phases** (bare list or `{"curriculum": [...]}`):
  "duration": 30.0,              // seconds (duration mode)
  "n_episodes": 1,               // episodes (episode mode)
  "max_duration": 300.0,         // hard wall-clock safety cap (episode mode)
- "fps": 30,                     // target game frames/second
+ "fps": 30,                     // required: steps (and frames) per second. The engine's own rate
+                                // (console cores and Atari ~60, Doom 35 / frame_skip) plays the game
+                                // at its real speed and fits its sound; the editor's Controls tab
+                                // shows it. Any other value plays the game slower or faster: the
+                                // manifest logs "speed" and the console says so when it is not 1
  "turn_based": false,           // step only on a key PRESS, not per frame (grid/toy_text games)
- "seed": 1234,                  // base RNG seed (optional)
+ "seed": 1234,                  // optional base seed: episodes play with seed, seed+1, ...
+                                // Pinned, every participant and run gets the same episodes.
+                                // Left out, it is derived from the run (sub/ses/task/run) and
+                                // the phase, so no two runs replay each other's; fmri-play
+                                // prints each phase's seed, the editor shows it (and Pin
+                                // copies it in), the manifest logs it
+
  "state_stride": 1,             // save a full savestate every K frames (see below)
  "state": "Level1",             // retro: named savestate/level (optional)
  "scenario": null,              // retro: scenario name (optional)
  "level": 0,                    // vgdl: level index; also uses "game","block_size"
  "keys": {"LEFT": 0, "RIGHT": 1}, // override keyboard->action map (see below)
- "save_pixels": false}          // ALE: also store lossless pixels (see warning)
+ "save_pixels": false}          // also store lossless pixels, where the backend can
 ```
 
 ### Keymaps
@@ -527,33 +614,29 @@ the recording gets (full example: `configs/demo_meg.json`):
 
 | `sync.mode` | after the experimenter's SPACE… |
 |---|---|
-| `wait` | wait for `key` (default `"="`) from the trigger box, then start |
-| `send` | send the `scanner_start` code on the trigger line, wait `delay` s, then start |
+| `wait` | wait for the key the trigger box types (`key`), then start |
+| `send` | send the start code on the trigger line, wait `delay` s, then start |
 | `none` | start immediately |
 
 `backend`: `null`, `lsl`, `serial` or `parallel` — `uv sync --extra triggers`
 (pylsl / pyserial / pyparallel); `port` for serial/parallel, `lsl_stream_name`
-for LSL. A backend that cannot be opened stops the run before the window
-opens, with the reason and the fix.
+for LSL.
 
-Nothing here is tied to a modality — rigs differ, so the config says what
-happens and the code enforces only that it is consistent (`send` needs a
-backend). The usual choices:
+Which of these a rig needs varies: the scanner may type a key at every volume,
+or start its recording when the stimulus PC sends a code, or neither. So the
+config says what happens rather than naming a modality, and the editor offers
+a template per common setup:
 
 | setup | `sync.mode` | `backend` |
 |---|---|---|
-| fMRI, trigger box types `=` | `wait` | `null` (no trigger line) |
-| MEG/EEG, acquisition started from the trigger input | `send` | `serial` / `parallel` / `lsl` |
-| MEG/EEG, acquisition started by hand, stimulus PC gets the scanner pulse | `wait` | `serial` / `parallel` / `lsl` |
+| the scanner types a key at every volume | `wait` | `null` (no trigger line) |
+| the recording starts from the trigger input | `send` | `serial` / `parallel` / `lsl` |
+| the recording is started by hand, the PC gets the scanner's key | `wait` | `serial` / `parallel` / `lsl` |
 | bench test, nothing connected | `none` | `null` |
 
-Leaving `sync.mode` or `backend` out is allowed and defaults to `wait` /
-`null` (the safest pair), but never silently: the experimenter screen and the
-console show the trigger status of the run (`NOT SET in config: sync.mode,
-backend`), and the manifest keeps it under `triggers.defaulted`. The worst
-outcome is a session that runs fine and turns out to have sent no triggers.
-`--dummy-trigger` announces itself the same way (and is recorded as
-`dummy_trigger` in the manifest).
+Leaving `sync.mode` or `backend` out defaults to `wait` / `null`, and says so:
+the experimenter screen, the console and the manifest all report it
+(`NOT SET in config: sync.mode, backend`), as they do for `--dummy-trigger`.
 
 What is sent: `task_start` when the clock anchors, `episode_start` at each
 reset, one code per frame (`"frame_every": N` to thin, `"on_frame": false` to
@@ -562,7 +645,7 @@ same sample still decode: frames cycle 1–7 in the low 3 bits, `task_start`=8,
 `task_stop`=16, `episode_start`=32, `scanner_start`=64, and a lifecycle code
 is OR'd with the current frame code (all under `"codes"`; overlaps are
 refused). Every value sent is logged: per frame as `trigger` in the block
-`.npz`, lifecycle events with their `session_time` under `triggers` in
+`.npz`, lifecycle events with their `run_time` under `triggers` in
 `manifest.json`.
 
 ## Timing
@@ -573,11 +656,17 @@ presses and releases are logged as they arrive (`key_time`, `key_name`,
 `key_down`), independent of the frame grid. The manifest records the display
 actually obtained (`vsync`, measured at start-up; `refresh_rate`).
 
-- Pick a game `fps` that divides the monitor's refresh rate (30 or 60 on 60 Hz).
-- Before a MEG/EEG session, check that the rig locks to the refresh:
+- A frame is shown at the next refresh after its step, so an `fps` that
+  divides the refresh rate (30 or 60 on a 60 Hz screen) shows every frame for
+  the same number of refreshes; otherwise frames alternate between one and two
+  and each onset can be up to one refresh late. `flip_time` records what
+  happened either way. Some cores' own rate is 59.92: close enough to 60 Hz
+  that one frame in ~800 is shown twice.
+- Check that the rig locks to the refresh before a session:
   `python -m fmri_gym.display --fullscreen` (verdict LOCKED / NOT locked; if
   not, use fullscreen and disable the desktop compositor). `--no-vsync` turns
-  the request off.
+  the request off. Pass the session's `--monitor` here and to the photodiode:
+  refresh, vsync and the photon offset belong to the monitor.
 - Once per rig, measure the constant flip-to-photon offset with a photodiode on
   the screen, then subtract it from `flip_time` and the frame triggers:
 
@@ -597,29 +686,51 @@ actually obtained (`vsync`, measured at start-up; `refresh_rate`).
 
 ## Output & data format
 
-Each session writes `data/<subject>_<timestamp>/`:
+Each run writes one folder, named and numbered as BIDS does:
+
+```
+data/sub-01/ses-001/beh/sub-01_ses-001_task-pong_run-001/
+data/sub-01/ses-001/beh/sub-01_ses-001_task-pong_run-002/        the same task again
+data/sub-01/ses-001/beh/sub-01_ses-001_task-pong_run-002_02/     ... re-acquired
+data/sub-01/ses-001/beh/sub-01_ses-001_task-crafter_run-001/
+```
+
+The task is the config's file name (letters and digits); `--subject` must be
+`sub-<letters/digits>`. `--ses` and `--run` are **required**: the numbers come
+from the session design (the script's `SES=` line and each run's place in it),
+never from what is on disk, so they survive a session that was interrupted,
+resumed or re-acquired. `--data-root` moves the tree (default `data`).
+
+Data is never overwritten. A run whose folder is already there writes to
+`..._02`, then `_03`; the attempt that stopped stays where it is. That suffix
+names the folder only — the run's label, which the manifest records with the
+`attempt` number and which keys the seeds, stays canonical, so every attempt
+at a run plays the same episodes.
+
+The names follow BIDS apart from that suffix, the contents not yet (no
+`_beh.tsv` / `_events.tsv`). Each folder holds:
 
 - **`manifest.json`** — subject, curriculum, trigger epoch, per-phase
   onsets/offsets (+ survey responses; onsets are flip times), the `display`
   actually opened (size, `vsync`, `refresh_rate`, driver), the `triggers`
   settings + lifecycle triggers sent (+ what the config left `defaulted`), the
-  `audio` output (device, measured device delay, chosen delay) and
-  `dummy_trigger`.
+  `audio` output (device, measured device delay, chosen delay),
+  `dummy_trigger`, the `run` it is (label and `attempt`), the `seeds` (each game phase derived or pinned) and the `versions` of pygame and SDL.
 - **`block-NN_<backend>_<game>.npz`** — one per game block, uniform schema:
 
   | key | meaning |
   |-----|---------|
   | `actions`, `rewards`, `terminal`, `episode_id` | per frame |
-  | `session_time`, `wall_time` | seconds since trigger (after the step); wall-clock Unix time |
+  | `run_time`, `wall_time` | seconds since this run's trigger (after the step); wall-clock Unix time |
   | `flip_time` | seconds since trigger of the **flip that showed the frame** (its onset; vsync-locked when the display reports `vsync: true`) |
-  | `pacing_reset_time`, `pacing_reset_late` | flips that ended a stall of more than a frame, and how many seconds late each was: the frame schedule restarted there instead of catching up with a burst of short frames. Empty in a clean block; otherwise warned about on the console when the block ends and again at exit, and listed in the manifest (`stalls`, and `n_pacing_resets` per phase) |
+  | `pacing_reset_time`, `pacing_reset_late` | flips that ended a stall of more than a frame, and how many seconds late each was: the frame schedule restarted there instead of catching up with a burst of short frames. Empty in a clean block; the manifest counts them per phase (`n_pacing_resets`). Why frames fall behind is open (issue #43) |
   | `key_time`, `key_name`, `key_down` | every key press/release during the block, stamped on arrival (~1 ms), independent of the frame grid |
   | `trigger` | the code sent on that frame's flip (only when a trigger backend is active) |
   | `audio_onset` | seconds since trigger that the frame's sound reached the DAC, NaN if none (only when the block played sound; with `audio_delay_ms`, `audio_resyncs`, `audio_trimmed_samples`) |
   | `states` | per-frame savestate blob (object array; `None` if engine has none) |
   | `episode_seeds` | RNG seed per episode |
   | `backend`, `game` | provenance |
-  | *backend vars* | `ram` (ale/retro), `info_*` (retro decoded score/lives/…), `obs` (gym), `screen_index` (ale `--save-pixels`) |
+  | *backend vars* | `ram` (ale/retro), `info_*` (retro decoded score/lives/…), `obs` (gym), `screen_index` (ale, with `"save_pixels"`) |
 
 ### Reconstruction (all verified bit-exact)
 
@@ -656,7 +767,7 @@ r.unwrapped.em.set_state(d["states"][10]); r.unwrapped.data.update_ram()
 > 86 KB with `state_stride: 15`** (~9×). Analysis variables (RAM, `info_*`) are
 > always logged every frame regardless of stride.
 >
-> ⚠️ **`--save-pixels` (ALE)** stores the screen every frame. It's lossless
+> ⚠️ **`"save_pixels": true`** stores the screen every frame. It's lossless
 > (indexed palette; `palette[screen_index] == RGB`) and zlib-friendly
 > (~0.25 KB/frame) — but unnecessary, since per-frame state already
 > reconstructs pixels. Prints a loud warning when enabled.

@@ -460,8 +460,8 @@ class Audio:
                 f"audio: the game makes {per_step * 1000:.3f} ms of sound per step but "
                 f"steps every {period * 1000:.3f} ms ({per_step / period - 1:+.2%}); "
                 f"sound can follow the flips only within {_MAX_STRETCH:.1%}. "
-                f"Set this block's fps to {1 / per_step:.4f} (ViZDoom: fps * frame_skip "
-                "must be 35), or set \"audio\": false")
+                "Leave this block's fps out to play at the engine's own rate, or set "
+                '"audio": false')
 
     def play(self, sound: Sound | None, flip_t: float) -> None:
         """Queue one chunk to start :attr:`delay` after its frame's flip.

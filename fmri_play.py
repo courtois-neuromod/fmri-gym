@@ -4,10 +4,16 @@ One experiment framework across backends: Atari (ALE), stable-retro consoles
 (NES/SNES/Genesis/...), and any plain Gymnasium env. The backend is chosen
 per game block in the curriculum; the experiment loop is identical for all.
 
-Usage:
-    python fmri_play.py --subject sub-01 --curriculum my.json
-    python fmri_play.py --subject sub-01 --curriculum my.json --dummy-trigger   # testing
-    python fmri_play.py --subject sub-01 --curriculum my.json --no-audio        # mute all games
+One config file is one run, and this plays it: nothing here loops over runs,
+opens an editor or writes a config. A session of several runs is a shell
+script with one of these commands per line (README, "Runs and sessions"),
+which ``fmri-edit`` writes and any shell plays.
+
+Usage (--ses and --run say which run of which session this is; a session
+script passes the same --ses to all of its runs, each with its own --run):
+    python fmri_play.py --subject sub-01 --curriculum my.json --ses 1 --run 1
+    python fmri_play.py ... --dummy-trigger    # testing: no experimenter/scanner wait
+    python fmri_play.py ... --no-audio         # mute all games
 
 See configs/demo_mixed.json for a curriculum that mixes all three backends,
 and README.md for the config schema.
@@ -16,90 +22,77 @@ and README.md for the config schema.
 from __future__ import annotations
 
 import argparse
-import json
 import os
+import signal
 import sys
-import time
 
-from fmri_gym import Audio, Display, Session, Triggers
-
-
-def load_config(path: str) -> dict:
-    """Load a config file: a dict with ``"curriculum"`` and optional sections.
-
-    ``"triggers"`` is the start sync + trigger codes (:mod:`fmri_gym.triggers`);
-    ``_``-prefixed keys are notes. One shape only -- a bare list is refused.
-
-    :param path: JSON file path.
-    :return: the config dict.
-    :raises ValueError: if the file is not a dict with a ``"curriculum"`` list.
-    """
-    with open(path) as f:
-        config = json.load(f)
-    if not isinstance(config, dict) or not isinstance(config.get("curriculum"), list):
-        raise ValueError(f'{path}: expected a JSON object with a "curriculum" list')
-    return config
+from fmri_gym import Run
+from fmri_gym.config import EXIT_QUIT, load_config, validate_config
+from fmri_gym.display import quit_like_esc
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description="Run any gym game as an fMRI task.")
-    p.add_argument("--subject", default="sub-test")
-    p.add_argument("--curriculum", required=True, help="config JSON (see README)")
-    p.add_argument("--outdir")
+class _Parser(argparse.ArgumentParser):
+    """argparse, plus where the numbers it insists on come from."""
+
+    def error(self, message: str) -> None:
+        if "--ses" in message or "--run" in message:
+            message += ("\n  a run says which run of which session it is: a session script "
+                        "passes one --ses to all its runs and gives each its own --run. At the "
+                        "desk: `fmri-ses --subject <sub>` prints the next free session, and "
+                        "--run 1 is the first run of this task in it")
+        super().error(message)
+
+
+def _parser() -> argparse.ArgumentParser:
+    """The command line: one run, and how this machine plays it."""
+    p = _Parser(description="Run any gym game as an fMRI task.")
+    p.add_argument("--subject", default="sub-test", help="BIDS subject: sub-<letters/digits>")
+    p.add_argument("--curriculum", required=True, help="config JSON of the run (see README); "
+                   "fmri-edit writes one without the JSON")
+    p.add_argument("--data-root", default="data",
+                   help="where the BIDS tree goes: <root>/sub-XX/ses-NNN/beh/<run>/")
+    p.add_argument("--ses", type=int, required=True,
+                   help="BIDS session number, from 1: which scanning session this run belongs "
+                   "to. A session script takes it once and passes it to every run (fmri-ses)")
+    p.add_argument("--run", type=int, required=True,
+                   help="this task's run number in the session, from 1: which run of the "
+                   "design this is, so it stays the same however the session went. A run that "
+                   "already has data is re-acquired beside it, never overwritten")
     p.add_argument("--size", default="1024x768")
     p.add_argument("--fullscreen", action="store_true")
+    p.add_argument("--monitor", type=int, default=0,
+                   help="which monitor to open on, by index (0: the first); a wrong one stops "
+                   "the run and lists this machine's")
     p.add_argument("--no-vsync", action="store_true",
                    help="do not lock flips to the monitor refresh (default: try to)")
     p.add_argument("--dummy-trigger", action="store_true")
     p.add_argument("--no-audio", action="store_true", help="mute game audio in every block (the curriculum saved "
                    "in the manifest shows \"audio\": false)")
-    p.add_argument("--save-pixels", action="store_true",
-                   help="ALE only: also store lossless pixels (large; warns).")
     p.add_argument("--vgdl-repo", default=os.environ.get("VGDL_REPO"),
                    help="path to the language_and_experience checkout (vgdl backend)")
     p.add_argument("--coom-repo", default=os.environ.get("COOM_REPO"),
                    help="path to the TTomilin/COOM checkout (coom backend)")
-    args = p.parse_args()
+    return p
 
+
+def main() -> None:
+    args = _parser().parse_args()
     config = load_config(args.curriculum)
-    curriculum = config["curriculum"]
-    w, h = (int(x) for x in args.size.lower().split("x"))
-    outdir = args.outdir or os.path.join(
-        "data", f"{args.subject}_{time.strftime('%Y%m%d-%H%M%S')}")
+    problems = validate_config(config)  # the editor's Check, so a file edited by hand gets it too
+    if problems:
+        raise ValueError(f"{args.curriculum}: " + "; ".join(problems))
 
-    # CLI-global backend options fold into the relevant game phases, so each
-    # per-block EnvAdapter reads everything it needs from its own spec.
-    for phase in curriculum:
-        if phase.get("type") != "game":
-            continue
-        if args.no_audio:
-            phase["audio"] = False
-        backend = phase.get("backend", "gym")
-        if backend == "ale" and args.save_pixels:
-            phase.setdefault("save_pixels", True)
-        if backend == "vgdl" and args.vgdl_repo:
-            phase.setdefault("repo", args.vgdl_repo)
-        if backend == "coom" and args.coom_repo:
-            phase.setdefault("repo", args.coom_repo)
-
-    # Before the window: a bad section, an unopenable port or an unusable
-    # output must stop the run before the session starts.
-    triggers = Triggers.from_config(config.get("triggers"))
-    print(f"triggers: {triggers.status()}", file=sys.stderr)
-    if args.dummy_trigger:
-        print("triggers: --dummy-trigger: the experimenter and scanner waits are skipped; "
-              "this is a test run, not a session", file=sys.stderr)
-    audio = Audio(enabled=not args.no_audio)
-    print(f"audio: {audio.status()}", file=sys.stderr)
-    display = Display(size=(w, h), fullscreen=args.fullscreen, vsync=not args.no_vsync)
-    session = Session(args.subject, curriculum, display, outdir,
-                      audio=audio, triggers=triggers, dummy_trigger=args.dummy_trigger)
+    run = Run.from_config(config, args)
+    previous = signal.signal(signal.SIGINT, quit_like_esc)
     try:
-        session.run()
+        completed = run.play()
     finally:
-        display.close()
-        audio.close()
-        triggers.close()
+        run.close()
+        # Last: a terminal's Ctrl+C can come twice (to uv and to us), the second one late.
+        signal.signal(signal.SIGINT, previous)
+    if not completed:
+        # A session script (set -e) must not start the next run after an ESC.
+        sys.exit(EXIT_QUIT)
 
 
 if __name__ == "__main__":
