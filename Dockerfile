@@ -64,14 +64,25 @@ RUN virtualenv /venv \
     && pip uninstall -y pygame \
     && pip install --no-cache-dir --force pygame-ce
 
-
 FROM runtime-base AS runtime
 
 COPY --from=builder /venv /venv
 COPY --from=builder /src /src
 
 ENV PATH=/venv/bin/:$PATH
+# predownload binaries
+RUN python -c 'import stk_gym; stk_gym.binary._download()'
 
 WORKDIR /src
 
 RUN playwright install chrome
+
+# install stk runtime deps
+RUN apt-get update \
+    && apt-get -y install --no-install-recommends \
+        libbluetooth3 libsdl2-2.0-0 libcurl4t64 libenet7 libfreetype6 libharfbuzz-bin libjpeg-turbo8 libogg0 libopenal1 libpng16-16t64 libssl3t64 libvorbis0a libmbedtls21 zlib1g \
+    && apt-get autoremove \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+    ARG SUPERTUXKART_DATADIR=/root/.cache/supertuxkart-gym/gym-v0.1.1/stk
