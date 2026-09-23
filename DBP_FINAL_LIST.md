@@ -9,7 +9,7 @@ are skipped: no Gymnasium interface.)
 
 | Category | Game | Backend / how | Config | Status |
 |---|---|---|---|---|
-| Action/shooter | **COOM** | `vizdoom` (COOM's exact Doom engine) | `dbp_games/vizdoom__defend_center.json` | ✅ |
+| Action/shooter | **COOM** | `vizdoom` (COOM's exact Doom engine) | `dbp_games/vizdoom__defend_center.json` … (9 stock scenarios + 1 pair) | ✅ |
 | Action/shooter, Puzzle | **AI GameStore** | `aigamestore` (p5.js via headless browser) | `dbp_games/aigamestore__game1.json` … | ✅ |
 | Building/open-world | **Crafter** | `crafter` | `dbp_games/crafter__crafter.json` | ✅ |
 | Building/open-world | **Craftium** | `gym` + `import_module` (Luanti voxel) | `dbp_games/craftium__choptree.json` | ✅ |

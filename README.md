@@ -134,7 +134,7 @@ the right per-game keymap/settings baked in. Coverage by class:
 | `text__` | 5 | frozenlake, frozenlake8x8, cliffwalking, taxi, blackjack (turn-based) |
 | `crafter__` | 1 | crafter |
 | `craftium__` | 1 | choptree (Luanti voxel; other ids: Room/Speleo/OpenWorld/…) |
-| `vizdoom__` | 1 | defend_center (Doom; COOM's engine; other Vizdoom*-v1 scenarios) |
+| `vizdoom__` | 10 | basic, deadly_corridor, defend_center, defend_line, health_gathering_supreme, my_way_home, predict_position, take_cover, deathmatch (Doom; COOM's engine; other `Vizdoom*-v1` scenarios work too), plus `take_cover_defend_line` running two of them back to back in one session |
 | `coom__` | 9 | pitfall, chainsaw, hide_and_seek, health_gathering, arms_dealer, parkour, raise_the_roof, run_and_gun, floor_is_lava (needs the COOM repo checkout) |
 | `overcooked__` | 1 | cramped_room (co-op cooking; other layouts) |
 | `baba__` | 1 | make_win (rule-manipulation puzzle; other ids) |
@@ -454,7 +454,9 @@ Each backend builds a default keyboard→action map:
 - **vizdoom**: arrows move/turn, Z/X strafe, SPACE shoots. Held keys combine
   when the scenario is made with `"env_kwargs": {"max_buttons_pressed": 0}`
   (a `MultiBinary` space — walk forward while turning); `keys` are the
-  scenario's `Discrete` action indices either way.
+  scenario's `Discrete` action indices either way. Scenarios that also declare
+  the mouse axes (Deathmatch, the full-game maps) get those axes dropped, since
+  the scanner has no mouse: turning is `TURN_LEFT`/`TURN_RIGHT`.
 - **gym**: a generic default (arrows → first Discrete actions, or ±limits on
   Box dims). Because a bare `Discrete(n)` has no inherent meaning, **specify
   `keys` per game** for anything non-obvious.

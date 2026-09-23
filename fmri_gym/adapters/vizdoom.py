@@ -18,6 +18,13 @@ indices. Setting `env_kwargs.max_buttons_pressed` to 0 switches the env to a
 MultiBinary action space so several buttons can be pressed at once; the keymap
 is unchanged, we just OR the buttons of every held key (e.g. forward + turn).
 
+A few scenarios (Deathmatch, the full-game maps) also declare *delta* buttons
+-- the mouse axes -- which makes ViZDoom's action space a
+``Dict{"binary", "continuous"}``. A scanner button box has no mouse, so
+:class:`_KeyboardOnlyAction` hides the delta axes and leaves the keyboard
+buttons: the subject turns with TURN_LEFT/TURN_RIGHT, as in every other
+scenario.
+
 Sound is opt-in per curriculum: `env_kwargs.audio_buffer_enabled` puts one tic
 of stereo PCM in `obs["audio"]` (so a model sees the same observation a subject
 hears), which `sound()` hands to the session's speakers and `capture()` logs.
@@ -56,6 +63,30 @@ _DEFAULT_KEY_TO_BUTTON_MAP: dict[str, list[str]] = {
 }
 
 
+class _KeyboardOnlyAction(gym.ActionWrapper):
+    """Drop a scenario's delta (mouse) axes, keeping its keyboard buttons.
+
+    ViZDoom presents a scenario with both kinds of buttons as a
+    ``Dict{"binary": ..., "continuous": Box(n_delta)}`` action space. There is
+    no mouse in the scanner, so the axes are held at 0 and the action space the
+    adapter (and a model) sees is the plain binary one.
+    """
+
+    def __init__(self, env: gym.Env) -> None:
+        super().__init__(env)
+        self.action_space = env.action_space["binary"]
+        self._axes = np.zeros(env.action_space["continuous"].shape,
+                              dtype=np.float32)
+
+    def action(self, action: Any) -> dict[str, Any]:
+        """Return ``action`` as a Dict action with the delta axes at rest.
+
+        :param action: a binary action (Discrete index or button vector).
+        :return: the ``{"binary", "continuous"}`` action ViZDoom expects.
+        """
+        return {"binary": action, "continuous": self._axes}
+
+
 def _get_button_map(env: gym.Env) -> list[list[int]]:
     """Return ``Discrete action index -> per-button 0/1 row`` for this scenario.
 
@@ -69,7 +100,7 @@ def _get_button_map(env: gym.Env) -> list[list[int]]:
     button_map = getattr(env.unwrapped, "button_map", None)
     if button_map is not None:
         return [[int(v) for v in row] for row in np.asarray(button_map)]
-    n = len(env.unwrapped.game.get_available_buttons())
+    n = env.unwrapped.num_binary_buttons
     return [list(row) for row in itertools.product((0, 1), repeat=n)
             if sum(row) <= 1]
 
@@ -84,7 +115,10 @@ def _get_button_to_action_map(env: gym.Env) -> dict[str, int]:
     :return: ``{BUTTON_NAME: discrete_action_index}``.
     """
     u = env.unwrapped
-    names = [str(b).split(".")[-1] for b in u.game.get_available_buttons()]
+    # ViZDoom reorders the scenario's buttons to put the delta (mouse) ones
+    # first, and the button map only covers the binary ones that follow them.
+    names = [str(b).split(".")[-1]
+             for b in u.game.get_available_buttons()][u.num_delta_buttons:]
     out: dict[str, int] = {}
     for i, row in enumerate(_get_button_map(env)):
         on = [names[j] for j, v in enumerate(row) if v]
@@ -136,6 +170,8 @@ class VizDoomAdapter(EnvAdapter):
             # Doom's reverb only colours the buffer, so turn EFX off; the audio
             # buffer itself still carries the real sound.
             env.unwrapped.game.add_game_args("+snd_efx 0")
+        if isinstance(env.action_space, gym.spaces.Dict):
+            return _KeyboardOnlyAction(env)
         return env
 
     def _keyspec(self) -> KeySpec:
