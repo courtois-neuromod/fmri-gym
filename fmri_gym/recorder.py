@@ -12,22 +12,21 @@ class EpisodeRecorder():
             self,
             path:pathlib.Path,
             frame_size:tuple[int, int],
+            video_codec='libx265',
+            video_stream_options = {"x265-params": "lossless=1"},
             audio_layout:str | None='stereo',
             audio_sample_rate:int=44100,
-            video_codec='libx265',
             audio_codec='flac',
             audio_sample_format='s16',
     ) -> None:
         self.container = av.open(path, mode="w")
-        time_base = Fraction(1, 65535)
+        self.time_base = Fraction(1, 65535)
         self.last_pts = -1000
-        self.video_stream = self.container.add_stream(video_codec, time_base=time_base)
+        self.video_stream = self.container.add_stream(video_codec, time_base=self.time_base)
         self.video_stream.width = frame_size[0]
         self.video_stream.height = frame_size[1]
-        self.video_stream.options = {
-            'lossless': '1',
-        }
-        #        self.video_stream.bit_rate = 200000 * 10e3
+        self.video_stream.options = video_stream_options
+        self.video_stream.pix_fmt = "yuv444p"
 
         if audio_layout is not None:
             self.audio_stream = self.container.add_stream(audio_codec, rate=audio_sample_rate)
@@ -50,34 +49,39 @@ class EpisodeRecorder():
                 with self.lock:
                     timestamp, frame, audio = self.steps.get()
                     self._step(timestamp, frame, audio)
-        for packet in self.video_stream.encode(None):
+        for packet in self.video_stream.encode():
             self.container.mux(packet)
         if hasattr(self, 'audio_stream'):
-            for packet in self.audio_stream.encode(None):
+            for packet in self.audio_stream.encode():
                 self.container.mux(packet)
         self.container.close()
 
     def step(self, timestamp, frame, audio) -> None:
+        audio = audio.pcm if audio is not None else None
         with self.lock:
             self.steps.put((timestamp, frame, audio))
 
     def _step(self, timestamp, frame, audio) -> None:
-        v_frame = av.VideoFrame.from_image(frame)
-        pts = int(timestamp / time_base)
+        v_frame = av.VideoFrame.from_ndarray(frame, channel_last=True)
+        pts = int(timestamp / self.time_base)
         pts = max(pts, self.last_pts + 1)
         v_frame.pts = pts
         self.last_pts = pts
         for packet in self.video_stream.encode(v_frame):
             self.container.mux(packet)
 
-        if hasattr(self, 'audio_stream'):
-            a_frame = av.AudioFrame.from_ndarray(
-                audio,
-                format='s16',
-                layout='stereo',
+        if hasattr(self, 'audio_stream') and audio is not None:
+            a_frame = av.AudioFrame(
+                samples=audio.shape[0],
+                format=self.audio_stream.codec_context.format,
+                layout=self.audio_stream.layout,
             )
+            a_frame.planes[0].update(audio.tobytes())
+            #a_frame.planes[1].update(audio[:,1].tobytes())
+            a_frame.pts = pts
             for packet in self.audio_stream.encode(a_frame):
                 self.container.mux(packet)
+
 
     def start(self) -> None:
         self.thread = threading.Thread(target=self._run, daemon=True)
