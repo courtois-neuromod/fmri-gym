@@ -5,6 +5,7 @@ import numpy as np
 import pathlib
 import queue
 import time
+import psutil
 
 class EpisodeRecorder():
 
@@ -14,7 +15,7 @@ class EpisodeRecorder():
             frame_size:tuple[int, int],
             video_codec='libx265',
             video_stream_pix_fmt = "yuv444p",
-            video_stream_options = {"x265-params": "lossless=1"},
+            video_stream_options = {"x265-params": "lossless=1:preset=ultrafast", "preset": "ultrafast"},
             audio_layout:str | None='stereo',
             audio_sample_rate:int=44100,
             audio_codec='flac',
@@ -41,6 +42,9 @@ class EpisodeRecorder():
 
 
     def _run(self)-> None:
+        thread_id = threading.get_native_id()
+        p = psutil.Process(thread_id)
+        p.nice(19)
         while True:
             if self.steps.empty():
                 if self._stop_event.is_set():

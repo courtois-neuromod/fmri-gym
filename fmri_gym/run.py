@@ -436,7 +436,8 @@ class Run:
             audio_layout = None#'stereo' if play_sound else None,
         )
         recorder.start()
-        recorder.step(next_t, adapter.render(), adapter.sound())
+        record_step_start = next_t
+        recorder.step(0, adapter.render(), adapter.sound())
 
         ## Loop over frames within episode
         while not (terminated or truncated) and time.perf_counter() < block_end:
@@ -465,7 +466,7 @@ class Run:
             # The frame trigger goes out on the flip that shows this frame.
             self.display.call_on_flip(self.triggers.frame)
             flip_t = self._show(adapter, play_sound)
-            recorder.step(t_step, adapter.render(), adapter.sound())
+            recorder.step(flip_t-record_step_start, adapter.render(), adapter.sound())
             # More than a frame behind (a stall): drop the debt, or it is repaid
             # as a burst of one-refresh frames. The frame of slack is what a
             # vsync-locked flip normally lands after its tick.
