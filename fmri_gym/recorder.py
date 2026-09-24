@@ -13,6 +13,7 @@ class EpisodeRecorder():
             path:pathlib.Path,
             frame_size:tuple[int, int],
             video_codec='libx265',
+            video_stream_pix_fmt = "yuv444p",
             video_stream_options = {"x265-params": "lossless=1"},
             audio_layout:str | None='stereo',
             audio_sample_rate:int=44100,
@@ -23,10 +24,10 @@ class EpisodeRecorder():
         self.time_base = Fraction(1, 65535)
         self.last_pts = -1000
         self.video_stream = self.container.add_stream(video_codec, time_base=self.time_base)
-        self.video_stream.width = frame_size[0]
-        self.video_stream.height = frame_size[1]
+        self.video_stream.width = frame_size[1]
+        self.video_stream.height = frame_size[0]
         self.video_stream.options = video_stream_options
-        self.video_stream.pix_fmt = "yuv444p"
+        self.video_stream.pix_fmt = video_stream_pix_fmt
 
         if audio_layout is not None:
             self.audio_stream = self.container.add_stream(audio_codec, rate=audio_sample_rate)

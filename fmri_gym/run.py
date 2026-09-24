@@ -436,7 +436,7 @@ class Run:
             audio_layout = None#'stereo' if play_sound else None,
         )
         recorder.start()
-        recorder.step(0, adapter.render(), adapter.sound())
+        recorder.step(next_t, adapter.render(), adapter.sound())
 
         ## Loop over frames within episode
         while not (terminated or truncated) and time.perf_counter() < block_end:
