@@ -732,6 +732,36 @@ The names follow BIDS apart from that suffix, the contents not yet (no
   | `backend`, `game` | provenance |
   | *backend vars* | `ram` (ale/retro), `info_*` (retro decoded score/lives/…), `obs` (gym), `screen_index` (ale, with `"save_pixels"`) |
 
+### Optional episode video
+
+Install `fmri-gym[recording]` (or `uv sync --extra recording`) and add
+`--record-video` to the play command; recording is off by default. Each
+`block-NN_episode-NN.mkv` stores engine frames and, when available at reset,
+native-rate engine PCM. The manifest links recordings to their block's NPZ and
+records the initial flip time, so video timestamps can be compared with `flip_time`.
+The final frame retains its hold until episode end, with a minimum of 1 ms.
+Matroska timestamps resolve to 1 ms; the NPZ retains the original flip times.
+These files cover game episodes, not messages, fixation phases or the display
+while encoders finish between blocks. That final drain can delay the next phase.
+
+The audio track preserves source chunks at frame flips, including gaps or overlaps
+between chunks. It is **not the speaker output** and does not include PortAudio's
+delay, resampling, trimming or underruns. Use the NPZ's
+`audio_onset` and playback diagnostics to assess delivery. The reset sound is not
+recorded; an adapter that only reveals its audio format later must declare that
+format at reset first. Mono/stereo PCM with an integer sample rate is supported.
+
+The default `libx265` encoder is lossless in YUV; RGB conversion can change pixel
+values slightly. `--record-codec ffv1` preserves RGB exactly. Both can make large
+files in fast games; test disk space and performance for the intended curriculum.
+In a Linux validation, 640×360 STK at 60 fps exhausted the default x265 queue
+after about 10 seconds. A 20-second FFV1 check completed on the same machine;
+longer recordings still need validation.
+Each episode encoder uses two threads and a 128 MiB snapshot queue, with at most
+two pending episodes. A full queue, exhausted episode limit or failed encoder
+stops the run with an error after saving the partial block's experiment data.
+The manifest also reports source-PCM gap/overlap counts in samples.
+
 ### Reconstruction (all verified bit-exact)
 
 1. **Per-frame state** (ale, retro): `restore(states[i])` → exact frame `i`, no
