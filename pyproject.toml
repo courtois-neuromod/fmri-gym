@@ -24,6 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+recording = ["av>=16"]
 ale = ["ale-py"]
 retro = ["stable-retro"]
 crafter = ["crafter"]

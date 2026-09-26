@@ -68,6 +68,11 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--dummy-trigger", action="store_true")
     p.add_argument("--no-audio", action="store_true", help="mute game audio in every block (the curriculum saved "
                    "in the manifest shows \"audio\": false)")
+    p.add_argument("--record-video", action="store_true",
+                   help="save episode MKVs of engine frames and source PCM (default: off; "
+                   "not the delayed speaker output)")
+    p.add_argument("--record-codec", choices=("libx265", "ffv1"), default="libx265",
+                   help="recording encoder: lossless YUV x265, or pixel-exact RGB ffv1")
     p.add_argument("--vgdl-repo", default=os.environ.get("VGDL_REPO"),
                    help="path to the language_and_experience checkout (vgdl backend)")
     p.add_argument("--coom-repo", default=os.environ.get("COOM_REPO"),
